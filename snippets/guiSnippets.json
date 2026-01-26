@@ -1,0 +1,326 @@
+{
+
+	"RGB Color": {
+			"prefix": ["GET_COLOR", "color", "rgb"],
+			"body": ["GET_COLOR(0x${1:00}, 0x${2:00}, 0x${3:00})"],
+			"description": "Generate RGB Color from RGB format"
+	},
+
+	"Draw GUI Display Screen": {
+			"prefix":  ["Draw", "GUI", "screen", "display"],
+			"body": [
+				"func Draw${1:SreenName}(ctx: &EG_userContext_t) {\n", 
+				"\tGUI_createContext() $$\n", 
+				"\t${2}",
+				"\tset_font(FONT_DEFAULT) $$", 
+				"\tset_color(COLOR_BLACK, GET_COLOR(255, 255, 255)) $$\n", 
+				"\tlayout(20, 1) $",
+				"\t{",
+				"\t\tlabel(\"Hello, World\", GUI_ALIGN_CENTER) $$",
+				"\t}\n",
+				"\tlayout(80, 1) $",
+				"\t{",
+				"\t\tlist(20, true) $",
+				"\t\t{",
+				"\t\t\trow(false, [60, 40]) $",
+				"\t\t\t{",
+				"\t\t\t\tlabel(\"param: \", GUI_ALIGN_CENTER) $$\n",
+				"\t\t\t\tinput_int(variable, minVal, maxVal, GUI_ALIGN_LEFT, isEditable) $$",
+				"\t\t\t}",
+				"\t\t}",
+				"\t}",
+				"}\n"
+			],
+			"description": "Draw GUI Screen"
+		},
+
+		"Empty Draw GUI Display Screen": {
+			"prefix":  ["Draw", "GUI", "screen", "display"],
+			"body": [
+				"func Draw${1:SreenName}(ctx: &EG_userContext_t) {\n", 
+				"\tGUI_createContext() $$\n",
+				"\t${2}",
+				"}\n"
+			],
+			"description": "Draw GUI Screen"
+		},
+
+		"GUI Button Handler": {
+			"prefix":  ["Button", "GUI", "Handler"],
+			"body": [
+				"GUI_buttonHandler( BUTTON_${1:ESC/ENTER/LEFT/RIGHT/UP/DOWN}, $(${2:isPressed}) {",
+				"\tif ${3:isPressed} {",
+				"\t\t${4}",
+				"\t}",
+				"})"
+			],
+			"description": "GUI Button Handler"
+		},
+
+		"GUI lebel": {
+			"prefix":  ["label", "GUI"],
+			"body": [
+				"label(\"${1:text}\", GUI_ALIGN_${2:LEFT/RIGHT/CENTER}) $$" 
+			],
+			"description": "label for GUI"
+		},
+
+		"GUI dynamic lebel": {
+			"prefix":  ["label", "dyn", "GUI"],
+			"body": [
+				"dyn_label(`${1:text}`, GUI_ALIGN_${2:LEFT/RIGHT/CENTER}) $$" 
+			],
+			"description": "dynamic label for GUI"
+		},
+
+		"GUI input int": {
+			"prefix":  ["input", "GUI", "int"],
+			"body": [
+				"input_int(${1:variable}, ${2:minVal}, ${3:maxVal}, GUI_ALIGN_${4:LEFT/RIGHT/CENTER}, ${5:isEditable}) $$" 
+			],
+			"description": "input int for GUI"
+		},
+
+		"GUI input float": {
+			"prefix":  ["input", "GUI", "float", "fp32"],
+			"body": [
+				"input_float(${1:variable}, ${2:minVal}, ${3:maxVal}, ${4:PercentCount}, GUI_ALIGN_${5:LEFT/RIGHT/CENTER}, ${6:isEditable}) $$" 
+			],
+			"description": "input int for GUI"
+		},
+
+		"GUI combo_box with vals": {
+			"prefix":  ["input", "GUI", "combo_box", "combo"],
+			"body": [
+				"combo_box(${1:variable}, ${2:color}, ${3:[\"label_one\", \"two\"]}, ${4:[val1, val2]}, ${5:isEditable}) $$" 
+			],
+			"description": "combo box for GUI with array of vals"
+		},
+
+		"GUI combo_box with size": {
+			"prefix":  ["input", "GUI", "combo_box", "combo"],
+			"body": [
+				"combo_box(${1:variable}, ${2:color}, ${3:[\"label_one\", \"two\"]}, ${4:elementsCount}, ${5:isEditable}) $$" 
+			],
+			"description": "combo box for GUI with size"
+		},
+
+		"GUI combo_box": {
+			"prefix":  ["input", "GUI", "combo_box", "combo"],
+			"body": [
+				"combo_box(${1:variable}, ${2:color}, ${3:[\"label_one\", \"two\"]}, ${4:isEditable}) $$" 
+			],
+			"description": "combo box for GUI"
+		},
+
+		"GUI switcher": {
+			"prefix":  ["GUI", "switcher"],
+			"body": [
+				"switcher(${1:variable}, ${2:bitPos}) $$" 
+			],
+			"description": "bit switcher"
+		},
+
+		"GUI fill color": {
+			"prefix":  ["GUI", "fill"],
+			"body": [
+				"fill(${1:color}) $$" 
+			],
+			"description": "GUI fill with color"
+		},
+
+		"GUI_setDraw": {
+			"prefix":  ["GUI", "draw", "GUI_setDraw"],
+			"body": [
+				"GUI_setDraw(${1:DrawSceenName})" 
+			],
+			"description": "GUI set current screen for draw"
+		},
+
+		"GUI set color": {
+			"prefix":  ["GUI", "set_color"],
+			"body": [
+				"set_color(${1:textColor}, ${2:backgroundColor}) $$" 
+			],
+			"description": "GUI set colors for current context"
+		},
+
+		"GUI set font": {
+			"prefix":  ["GUI", "set_font", "font"],
+			"body": [
+				"set_font(${1:fontName}) $$" 
+			],
+			"description": "GUI set font for current context"
+		},
+
+		"GUI draw image": {
+			"prefix":  ["GUI", "draw", "image"],
+			"body": [
+				"image(${1:imageName}, ${2:isAspectRatio}) $$" 
+			],
+			"description": "GUI draw image"
+		},
+
+		"GUI draw button image": {
+			"prefix":  ["GUI", "draw", "button", "image"],
+			"body": [
+				"image(${1:imageName}, $(isButtonClick) {",
+				"\tif isButtonClick {",
+				"\t\t ${2:toDo...}",
+				"\t}",
+				"}, ${4:isAspectRatio}) $$" 
+			],
+			"description": "GUI draw button image"
+		},
+
+
+		"GUI draw animation": {
+			"prefix":  ["GUI", "draw", "animation"],
+			"body": [
+				"animation(${1:[img1, img2]}, ${2:[duration1, duration2]/duration}, ${3:isEnableAnim}, ${4:firstFrameId}, ${5:lastFrameId}, ${6:isAspectRatio}) $$"
+			],
+			"description": "GUI draw animation"
+		},
+
+		"GUI draw button": {
+			"prefix":  ["GUI", "draw", "button"],
+			"body": [
+				"button(${1:label}, ${2:bgColor}, ${3:RoundingOfEdges(%)} $(isButtonClick) {",
+				"\tif isButtonClick {",
+				"\t\t ${4:toDo...}",
+				"\t}",
+				"}) $$" 
+			],
+			"description": "GUI draw button"
+		},
+
+		"GUI draw list": {
+			"prefix":  ["GUI", "draw", "list"],
+			"body": [
+				"list(${1:rowsHight(%)}, ${2:isShowPos}) $",
+				"{",
+				"\trow(${3:isHideRow}, ${4:cols/[col1_width(%), col2(%), ...]}) $",
+				"\t{",
+				"\t\t${5}",
+				"\t}",
+				"}" 
+			],
+			"description": "GUI draw list"
+		},
+
+		"GUI draw row": {
+			"prefix":  ["GUI", "draw", "row"],
+			"body": [
+				"row(${1:isHideRow}, ${2:cols/[col1_width(%), col2(%), ...]}) $",
+				"{",
+				"\t${3}",
+				"}"
+			],
+			"description": "GUI draw list row"
+		},
+
+
+
+		"GUI set border element": {
+			"prefix":  ["border", "GUI"],
+			"body": [
+				"set_borders(${1:color}) $$"
+			],
+			"description": "GUI set borders for element (f.e: button)"
+		},
+
+		"GUI set unit for input": {
+			"prefix":  ["unit", "GUI"],
+			"body": [
+				"set_unit(${1:\"%\"}) $$"
+			],
+			"description": "GUI set unit for input element"
+		},
+
+
+		"GUI draw layout": {
+			"prefix":  ["layout", "draw", "GUI"],
+			"body": [
+				"layout(${1:rowHight(%)}, ${2:colsCount/[col1_width(%), col2(%), ...]}) $",
+				"{",
+				"\t${3}",
+				"}"
+			],
+			"description": "GUI set layout"
+		},
+
+		"GUI draw flow layout": {
+			"prefix":  ["flow_layout", "flow", "layout", "draw", "GUI"],
+			"body": [
+				"flow_layout(${1:xPos(%)}, ${2:yPos(%)}, ${3:rowHight(%)}, ${4:colsCount/[col1_width(%), col2(%), ...]}) $",
+				"{",
+				"\t${3}",
+				"}"
+			],
+			"description": "GUI set flow layout"
+		},
+
+		"GUI draw fixed layout": {
+			"prefix":  ["fixed_layout", "fixed", "layout", "draw", "GUI"],
+			"body": [
+				"fixed_layout(${1:xPos(pixels)}, ${2:yPos}, ${3:rowHight}, ${4:colsCount/[col1_width(pixels), col2, ...]}) $",
+				"{",
+				"\t${3}",
+				"}"
+			],
+			"description": "GUI set layout with pixels dimension"
+		},
+
+		"GUI draw fixed flow layout": {
+			"prefix":  ["fixed_flow_layout", "fixed", "flow", "layout", "draw", "GUI"],
+			"body": [
+				"fixed_flow_layout(${1:xPos(pixels)}, ${2:yPos}, ${3:rowHight}, ${4:colsCount/[col1_width(pixels), col2, ...]}) $",
+				"{",
+				"\t${3}",
+				"}"
+			],
+			"description": "GUI set flow layout with pixels dimension"
+		},
+
+		"GUI input is Applied": {
+			"prefix":  ["GUI", "guiCheck", "isApplied"],
+			"body": [
+				"ctx.isApplied() {",
+				"\t${1}",
+				"}"
+			],
+			"description": "GUI check: last input is not canceled"
+		},
+
+		"GUI least one input is Applied": {
+			"prefix":  ["GUI", "guiCheck", "isApplied", "isLeastOne"],
+			"body": [
+				"ctx.isLeastOneValueApplied() {",
+				"\t${1}",
+				"}"
+			],
+			"description": "GUI check: least one input is not canceled"
+		},
+
+		"GUI input value is changed": {
+			"prefix":  ["GUI", "guiCheck", "isChanged"],
+			"body": [
+				"ctx.isValueChanged() {",
+				"\t${1}",
+				"}"
+			],
+			"description": "GUI check: last input value is changed"
+		},
+
+		"GUI least one input value is changed": {
+			"prefix":  ["GUI", "guiCheck", "isChanged", "isLeastOne"],
+			"body": [
+				"ctx.isLeastOneValueChanged() {",
+				"\t${1}",
+				"}"
+			],
+			"description": "GUI check: least one input value is changed"
+		}
+	
+
+}

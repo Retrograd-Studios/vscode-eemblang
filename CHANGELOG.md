@@ -1,9 +1,13 @@
-# Change Log
+# EEPL (Easy Embedded sytems Programming Language) Extension Changelog
 
-All notable changes to the "eemblang" extension will be documented in this file.
+## Version 0.9.10: December 23, 2024
+* Updated snippets
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+## Version 0.9.9: December 20, 2024
+* Added: some Code Snippets and color provider over Direct Implementation
 
-## [Unreleased]
+## Version 0.9.8: December 18, 2024
+* Added: different host triplet support. Supported now: x64-windows, x64-linux.
 
-- Initial release
+## Version 0.9.7: August 21, 2024
+* Fixed rebuild request after changing Target Device/Platform, changing 'Build preset', and installing another Toolchain version.

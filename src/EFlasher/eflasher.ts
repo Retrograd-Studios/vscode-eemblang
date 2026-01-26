@@ -48,6 +48,8 @@ export class EFlasherClient {
             return false;
         }
 
+        await toolchain.resolveTarget(this.config);
+
         this.isBusy = true;
 
         const path = await toolchain.getPathForExecutable("eflash");
@@ -118,7 +120,7 @@ export class EFlasherClient {
 
             const cwd = ws.uri.fsPath;//"${cwd}";
             const devName = this.config.targetDevice.devName;
-            progPath = `${cwd}/out/${devName}/prog.alf`;
+            progPath = this.config.uploadingFilePath;//  //`${cwd}/out/${devName}/prog.alf`;
 
             if (!fs.existsSync(progPath)) {
                 const options: vscode.OpenDialogOptions = {

@@ -58,6 +58,8 @@ export class EGDBServer {
             return false;
         }
 
+        await toolchain.resolveTarget(this.config);
+
         this.isBusy = true;
 
         if (this.egdbServer && this.egdbServer.exitCode == null) {
@@ -461,7 +463,7 @@ export class EGDBServer {
 
         const result = await this.executeSever();
         if (result) {
-            runDebug(this.config);
+            runDebug(this.config, false);
             return;
         }
 

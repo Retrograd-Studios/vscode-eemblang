@@ -1,0 +1,187 @@
+{
+		"var template": {
+			"prefix": ["var"],
+			"body": ["var ${1:varName}: ${2:type} = ${3:value}"],
+			"description": "variable declaration"
+		},
+		
+		"let template": {
+			"prefix": ["let"],
+			"body": ["let ${1:constantName}: ${2:type} = ${3:value}"],
+			"description": "constant declaration"
+		},
+
+		"import symbol": {
+			"prefix":  ["import"],
+			"body": [
+				"import ${1:symbol} as ${2:newName} from ${3:packageName}"
+			],
+			"description": "import symbol with nickname"
+		},
+
+		"import ALL": {
+			"prefix":  ["import", "all"],
+			"body": [
+				"import * from ${1:packageName}"
+			],
+			"description": "import ALL symbols from package"
+		},
+
+		"func declaration": {
+			"prefix": ["func"],
+			"body": [
+						"func ${1:functionName}(${2:argName: ${3:argType}}) -> ${4:returnedType} {",
+						"\t${5}",
+						"\t return ${6:returnedValue}",
+						"}"
+			],
+			"description": "function declaration"
+		},
+
+		"lambda": {
+			"prefix": ["$(", "lambda", "closure"],
+			"body": [
+						"$(${1:argName}) {",
+						"\t${2}",
+						"\t return ${3:value}",
+						"}"
+			],
+			"description": "template of lambda"
+		},
+
+		"type of function": {
+			"prefix": ["->", "func", "$->", "type"],
+			"body": [
+						["func {(${1:argType}) -> ${2:returnedType}}"]
+			],
+			"description": "type of function"
+		},
+
+	
+		"foreach": {
+			"prefix": ["for", "foreach"],
+			"body": ["for ${1:i}, ${2:v} in ${3:array} {", "\n\t$4", "\n}"],
+			"description": "foreach loop for arrays"
+		},
+
+		"for": {
+			"prefix": ["for", "range"],
+			"body": ["for ${1:i} in ${2:0} .. ${3:N} {", "\n\t$4", "\n}"],
+			"description": "foreach loop for arrays"
+		},
+
+		"for with step": {
+			"prefix": ["for", "range", "step"],
+			"body": ["for ${1:i} in ${2:0}, ${3:1} .. ${4:N} {", "\n\t$5", "\n}"],
+			"description": "foreach loop for arrays"
+		},
+
+		
+
+		"UI_READ_DI": {
+			"prefix": ["UI", "READ", "UI_READ_DI", "DI"],
+			"body": ["UI_READ_DI(UI_${1:1})"],
+			"description": "Read discrete input signal"
+		},
+
+		"UI_READ_AI": {
+			"prefix": ["UI", "READ", "UI_READ_AI", "AI"],
+			"body": ["UI_READ_AI(UI_${1:1})"],
+			"description": "Read Analog input signal"
+		},
+
+		"UI_CFG": {
+			"prefix": ["UI", "CFG", "UI_CFG", "mode"],
+			"body": ["UI_CFG(UI_${1:1}, UI_MODE_${2:DI/AI/TEMP})"],
+			"description": "Set UI mode"
+		},
+
+		"UI_CFG_SET_RANGE": {
+			"prefix": ["UI", "CFG", "UI_CFG_SET_RANGE", "RANGE"],
+			"body": ["UI_CFG_SET_RANGE(UI_${1:1}, ${2:minValue}, ${3:maxValue}, ${4:offset})"],
+			"description": "Set range for AI"
+		},
+
+		"UI_CFG_SET_B": {
+			"prefix": ["UI", "CFG", "UI_CFG_SET_B", "coef"],
+			"body": ["UI_CFG_SET_B(UI_${1:1}, ${2:3435/3950/...})"],
+			"description": "Set coefficient B for NTC10K."
+		},
+
+		"RELAY_SET": {
+			"prefix": ["RELAY_SET", "DO"],
+			"body": ["RELAY_SET(RELAY_${1:1}, ${2:true/false})"],
+			"description": "Set relay output"
+		},
+
+		"RELAY_TOGGLE": {
+			"prefix": ["RELAY_TOGGLE", "DO"],
+			"body": ["RELAY_TOGGLE(RELAY_${1:1})"],
+			"description": "Toggle relay output"
+		},
+
+		"RELAYS_SET": {
+			"prefix": ["RELAYS_SET", "DO", "RELAYS"],
+			"body": ["RELAYS_SET(${1:pinsMask}, ${2:true/false})"],
+			"description": "Set relays output with mask"
+		},
+
+		"RELAYS_TOGGLE": {
+			"prefix": ["RELAYS_TOGGLE", "DO"],
+			"body": ["RELAYS_TOGGLE(${1:pinsMask})"],
+			"description": "Toggle relays output with mask"
+		},
+
+		"AO_OUTPUT": {
+			"prefix": ["AO_OUTPUT", "AO"],
+			"body": ["AO_OUTPUT(AO_${1:1}, ${2:0..10000(mV)})"],
+			"description": "Set analog output value in mV"
+		},
+
+
+		"Delay": {
+			"prefix": ["DelayMs"],
+			"body": ["DelayMs(${1:sleepFor(mSec)})"],
+			"description": "Delay current task for (mSec)"
+		},
+
+		"UART_CFG": {
+			"prefix": ["UART_CFG", "UART", "CFG"],
+			"body": ["UART_CFG(UART_COM_${1:0}, ${2:9600}, UART_PARITY_${3:NO/EVEN/ODD}, UART_${4:ONE/TWO}_STOPBIT)"],
+			"description": "Set UART config"
+		},
+
+		
+
+		"Create Font": {
+			"prefix": ["Create", "Font"],
+			"body": ["CreateFont(${1:fontName}, \"./${2:pathToTTF}\", ${3:fontSize})"],
+			"description": "Create font from file"
+		},
+
+		"Create Image": {
+			"prefix": ["Create", "Image", "IMG"],
+			"body": ["CreateIMG(${1:imageName}, \"./${2:pathToImageFile}\")"],
+			"description": "Create Image from file"
+		},
+		
+
+		"Println": {
+			"prefix":  ["Print"],
+			"body": [
+				"Println(`${1}`)" 
+			],
+			"description": "Println template"
+		},
+
+		"Print": {
+			"prefix":  ["Print"],
+			"body": [
+				"Print(`${1}`)" 
+			],
+			"description": "Print template"
+		}
+
+
+
+}

@@ -11,10 +11,11 @@ import * as https from 'https';
 
 import fetch from 'node-fetch';
 import { ClientRequest } from 'http';
-import { getCurrentToolchain, isDirAtUri, isFileAtUri } from "./toolchain";
+import { isDirAtUri, isFileAtUri, IsToolchainInstalled } from "./toolchain";
 
 import * as fsExtra from 'fs-extra';
 import * as unzip from 'unzip-stream';
+import { Config } from "./config";
 
 
 
@@ -43,13 +44,11 @@ export type PackageVersions = {
 
 
 
-export async function installPackage(packageInfo: PackageInfo): Promise<boolean> {
+export async function installPackage(config: Config, packageInfo: PackageInfo): Promise<boolean> {
 
-
-    const currentToolchain = await getCurrentToolchain();
-    if (currentToolchain == undefined)
+    const currentToolchain = await IsToolchainInstalled(config) ? config.currentToolchain : undefined;
+    if (currentToolchain === undefined)
     {
-        await vscode.window.showErrorMessage(`EEPL Toolchain is not installed.`);
         return false;
     }
 
@@ -398,7 +397,7 @@ export async function getPackageInfo(origPackageInfo: PackageInfo): Promise<Pack
 }
 
 
-export async function checkPackages() {
+export async function checkPackages(config: Config) {
 
     const homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
 
@@ -466,7 +465,7 @@ export async function checkPackages() {
             continue;
         }
 
-        const result = await installPackage(pkg).catch(() => {
+        const result = await installPackage(config, pkg).catch(() => {
             vscode.window.showErrorMessage(`The package '${pkg.pkgName}' has been not installed/updated.`);
         });
 

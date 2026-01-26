@@ -7,15 +7,21 @@ import { log } from "./util";
 export const TASK_TYPE = "eec";
 export const TASK_SOURCE = "eepl";
 
-import * as path from "path";
-import { fstat } from "fs";
-import { rejects } from "assert";
+
+import * as fs from 'fs';
 
 import * as nodePath from 'path';
-import { openStdin } from "process";
-import { Console } from "console";
 
 const posixPath = nodePath.posix || nodePath;
+
+export enum EasyTaskId {
+    Build = 0,
+    Simulate, 
+    Link,
+    EBuild,
+    Flush
+}
+
 
 export interface EasyTaskDefinition extends vscode.TaskDefinition {
     command?: string;
@@ -49,15 +55,7 @@ class EasyTaskProvider implements vscode.TaskProvider {
         const defs = [
             { command: "build", name: "Build for Device", args: ["-triplet", "thumbv7m-none-none-eabi", "-emit-llvm", "-g", "-O3"], group: vscode.TaskGroup.Build },
             { command: "simulate", name: "Run Simulator", args: ["-jit", "-S", "-emit-llvm", "-g", "-O3"], group: undefined },
-            { command: "link", name: "linker", args: [
-                "${cwd}\\out\\output.o",
-                "--format=elf",
-                "--Map=${cwd}\\out\\target.map",
-                "${cwd}\\out\\target.ld",
-                "-o",
-                "${cwd}\\out\\target.o",
-                "-nostdlib" ]
-            , group: undefined, /*dependsOn: "eemblang: Build for Device"*/ },
+            { command: "link", name: "linker", args: toolchain.targetInfoDefaultValue.linkArgs.slice(1), group: undefined, /*dependsOn: "eemblang: Build for Device"*/ },
             { command: "ebuild", name: "buildAELF", args: [
                 "-f", "${cwd}\\out\\target_out.o",
                 "-o", "${cwd}\\out\\prog.alf",
@@ -103,7 +101,7 @@ class EasyTaskProvider implements vscode.TaskProvider {
         // VSCode calls this for every cargo task in the user's tasks.json,
         // we need to inform VSCode how to execute that command by creating
         // a ShellExecution for it.
-        if (!(await toolchain.IsToolchainInstalled())) {
+        if (!(await toolchain.IsToolchainInstalled(this.config))) {
             return new Promise((resolve, reject) => { reject(); });
         }
 
@@ -124,10 +122,13 @@ class EasyTaskProvider implements vscode.TaskProvider {
 }
 
 
-export async function createTask(idx: number, config: Config): Promise<vscode.Task> {
+export async function createTask(idx: EasyTaskId, config: Config): Promise<vscode.Task | undefined> {
 
+    if (config.isInternalLinker && idx >= EasyTaskId.Link && idx <= EasyTaskId.EBuild) {
+        return undefined;
+    }
 
-    if (!(await toolchain.IsToolchainInstalled())) {
+    if (!(await toolchain.IsToolchainInstalled(config))) {
         return new Promise((resolve, reject) => { reject(); });
     }
 
@@ -138,13 +139,8 @@ export async function createTask(idx: number, config: Config): Promise<vscode.Ta
         break;
     }
 
-    if (config.targetDevice.description == "[Device]")
-    {
-        await vscode.commands.executeCommand('eepl.command.setTargetDevice');
-        if (config.targetDevice.description == "[Device]")
-        {
-            return new Promise((resolve, reject) => { reject(); });
-        }
+    if (!(await toolchain.resolveTarget(config))) {
+        return new Promise((resolve, reject) => { reject(); });
     }
 
     const targetFile = config.targetDevice.pathToFile;
@@ -156,32 +152,40 @@ export async function createTask(idx: number, config: Config): Promise<vscode.Ta
         ldPath = ldPath.substring(0, pIdx-1) + "/target_out.ld";
     }
 
-    let libPath = await toolchain.easyPath();
-    const pIdx2 = libPath.lastIndexOf("bin");
-    if (pIdx2 !== -1)
-    {
-        libPath = libPath.substring(0, pIdx2-1) + "/lib/" + config.targetDevice.stdlib + "/std/picolib";
-    }
-    const runTimelib = config.targetDevice.runtime.length > 0 ? `-l${config.targetDevice.runtime}` : "";
-
     const devName = config.targetDevice.devName;
     const cwd = "${cwd}";
+
+    const isOldToolchain = config.isOldToolchain;
+
+    let toolcahinPath = await toolchain.easyPath();
+    const pIdx2 = toolcahinPath.lastIndexOf("bin");
+
+    const outputPath = isOldToolchain? `${workspaceTarget!.uri.fsPath}/out/${devName}/output` : `${workspaceTarget!.uri.fsPath}/out/${devName}`;
+
+    //const productName = config.productName;
+    const productPath = config.productPath;
+    const uploadingFilePath = config.uploadingFilePath;
+    const exePath = config.exePath;
 
     const presets = config.get<string>("build.presets");
 
     let addArgs: string[] = [];
 
+    let isGenDbgInfo = false;
+
     if (presets == "Debug") {
         addArgs = ["-g", "-O0"];
+        isGenDbgInfo = true;
     } else if (presets == "OpDebug") {
         addArgs = ["-g", "-O3"];
+        isGenDbgInfo = true;
     } else if (presets == "Release") {
         addArgs = ["-O3", "-drtc"];
     } else if (presets == "Safe Release") {
         addArgs = ["-O3"];
     } else if (presets == "Custom") {
         const opLevel = config.get<string>("build.optimization");
-        const isGenDbgInfo = config.get<boolean>("build.generateDbgInfo");
+        isGenDbgInfo = config.get<boolean>("build.generateDbgInfo");
         const isRunTimeChecks = config.get<boolean>("build.runtimeChecks");
         addArgs = [opLevel];
         if (isGenDbgInfo) {
@@ -191,79 +195,41 @@ export async function createTask(idx: number, config: Config): Promise<vscode.Ta
             addArgs.push("-drtc");
         }
     }
-
-
-    const inputSourceFile = config.get<string>("build.inputFile");
+    
+    let ebuildArgs: string[] = [];
+    if (isOldToolchain) {
+        ebuildArgs = [
+            "-f", `${exePath}`,
+            "-o", `${uploadingFilePath}`,
+            "-m", `${productPath}.map`,
+            "-c", `${productPath}_CFG.bin`,
+            "-r", `${productPath}_RES.bin`
+        ];
+    } else {
+        ebuildArgs = [
+            "-f", `${productPath}.elf`,
+            "-o", `${productPath}.alf`,
+            "-m", `${productPath}.map`,
+            "-d", `${productPath}ROM_MEMORY_DEFAULTS.bin`,
+            "-c", `${productPath}CONFIG.bin`,
+            "-r", `${productPath}RESOURCES.bin`
+        ];
+    }
+    
+    const inputSourceFile = isOldToolchain ? 'main.es' : config.get<string>("build.inputFile");
 
     const defs = [
         { command: "build", name: "Build for Device", args: ["-target", `${targetFile}`, "-triplet", config.targetDevice.triplet, "-S", "-emit-llvm"].concat(addArgs), group: vscode.TaskGroup.Build },
         { command: "simulate", name: "Run Simulator", args: ["-target", `${targetFile}`, "-jit", "-S", "-emit-llvm"].concat(addArgs), group: undefined },
-        { command: "link", name: "linker", args: [
-            `${cwd}/out/${devName}/output.o`,
-            // `${libPath}targets/v7-m/dl7M_tln.a`,
-            // `${libPath}targets/v7-m/m7M_tl.a`,
-            // `${libPath}targets/v7-m/shb_l.a`,
-            //`${libPath}targets/v7-m/rt7M_tl.a`,
-            //"--sysroot=C:\\Users\\79117\\Desktop\\arm-gnu-toolchain-12.2.rel1-mingw-w64-i686-arm-none-eabi\\lib\\gcc\\arm-none-eabi\\12.2.1",
-            
-            `--sysroot=${libPath}`,
-            `-L${libPath}/lib`,
-            //`-L${libPath}targets/rt/lib2`,
-            
-            //"-IC:\\Users\\79117\\Desktop\\arm-gnu-toolchain-12.2.rel1-mingw-w64-i686-arm-none-eabi\\arm-none-eabi\\include",
-            //"-IC:\\Users\\79117\\Desktop\\arm-gnu-toolchain-12.2.rel1-mingw-w64-i686-arm-none-eabi\\lib\\gcc\\arm-none-eabi\\12.2.1\\include",
-            //"-LC:\\Users\\79117\\Desktop\\arm-gnu-toolchain-12.2.rel1-mingw-w64-i686-arm-none-eabi\\arm-none-eabi\\lib\\thumb\\v7-m\\nofp",
-            //"-LC:\\Users\\79117\\Desktop\\arm-gnu-toolchain-12.2.rel1-mingw-w64-i686-arm-none-eabi\\lib\\gcc\\arm-none-eabi\\12.2.1\\thumb\\v7-m\\nofp",
-            //"-lsemihost",
-            "-lc",
-            "-lm",
-            runTimelib,
-            //"-oslib",
-            //"-lgcc",
-            //"-lc_nano",
-            //"-lnosys",
-            //"-lg_nano",
-            //"-lg",
-            //"-lunwind",
-           // "-lrdimon_nano",
-
-            //"-mfloat-abi=soft",
-            //"-march=thumbv7m+nofp",
-            // `${libPath}targets/v7-m/nofp/libc.a`,
-            // `${libPath}targets/v7-m/nofp/libg.a`,
-            // `${libPath}targets/v7-m/nofp/libm.a`,
-           // `${libPath}targets/v7-m/nofp/libsemihost.a`,
-            //`${libPath}targets/v7-m/nofp/crt0.o`,
-            //`${libPath}targets/v7-m/nofp/crt0-hosted.o`,
-            //`${libPath}targets/v7-m/nofp/crt0-semihost.o`,
-           // `${libPath}bin/rt7M_tl.a`,
-            //`${libPath}bin/shb_l.a`,
-            "--format=elf",
-            `--Map=${cwd}/out/${devName}/output.map`,
-            ldPath,
-            "-o",
-            `${cwd}/out/${devName}/output.elf`,
-            "-nostdlib"
-        ]
-        , group: undefined/*, dependsOn: "eemblang: Build for Device"*/ },
-        { command: "ebuild", name: "buildAELF", args: [
-            "-f", `${cwd}/out/${devName}/output.elf`,
-            "-o", `${cwd}/out/${devName}/prog.alf`,
-            "-m", `${cwd}/out/${devName}/output.map`,
-            "-c", `${cwd}/out/${devName}/output_CFG.bin`,
-            "-r", `${cwd}/out/${devName}/output_RES.bin` ]
-            , group: undefined/*, dependsOn: "eemblang: linker" */},
-        { command: "flaher", name: "EEmbFlasher", args: [`${cwd}/out/${devName}/prog.alf`], group: undefined  }
+        { command: "link", name: "linker", args: config.targetDevice.linkArgs, group: undefined },
+        { command: "ebuild", name: "buildAELF", args: ebuildArgs, group: undefined },
+        { command: "flaher", name: "EEmbFlasher", args: [`${uploadingFilePath}`], group: undefined }
     ];
-
-
-    
 
     const def = defs[idx];
 
-
     const args0 = (idx == 0 || idx == 1) ? 
-        [`${workspaceTarget!.uri.fsPath}/${inputSourceFile}`].concat(def.args).concat(["-o", `${workspaceTarget!.uri.fsPath}/out/${devName}/output`]) : def.args;
+        [`${workspaceTarget!.uri.fsPath}/${inputSourceFile}`].concat(def.args).concat(["-o", `${outputPath}`]) : def.args;
 
     const vscodeTask = await buildEasyTask2(
         //workspaceTarget,
@@ -288,16 +254,18 @@ export async function buildEasyTask2(
     config: Config
 ): Promise<vscode.Task> {
 
-    
-
-
     const exeMap = new Map<string, string>([
         ["build",  "eec"],
         ["simulate", "eec"],
-        ["link", "ld.lld"],
         ["ebuild", "ebuild"],
         ["flaher", "eflash"],
     ]);
+
+    if (config.targetDevice.devName.indexOf("windows") != -1) {
+        exeMap.set("link","lld-link");
+    } else {
+        exeMap.set("link","ld.lld");
+    }
 
     const exeName = exeMap.get(definition.command!);
 

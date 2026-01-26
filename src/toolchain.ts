@@ -184,11 +184,224 @@ export type ToolchainsFile = {
 }
 
 
+export type EECompilerOutput = {
+  libs: string[];
+  productName: string;
+}
 
-export let LastToolchain: ToolchainInfo | undefined = undefined;
 
 
-export async function installToolchain(toolchainInfo: ToolchainInfo): Promise<boolean> {
+// export let LastToolchain: ToolchainInfo | undefined = undefined;
+
+async function installStdLibs(config: Config, targetDevice: TargetInfo): Promise<boolean> {
+
+  let homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
+
+  const tmpDir = vscode.Uri.joinPath(
+    vscode.Uri.file(homeDir),
+    ".eec-tmp"
+  );
+
+  const tmpFilePath = vscode.Uri.joinPath(
+    vscode.Uri.file(homeDir),
+    ".eec-tmp", `stdlib_${targetDevice.devName}.zip`
+  );
+
+  // const toolchainDirPath = vscode.Uri.joinPath(
+  //   vscode.Uri.file(homeDir),
+  //   "lib"
+  // );
+
+  const libsRootDirPath = vscode.Uri.joinPath(
+    vscode.Uri.file(homeDir),
+    ".eec"
+  );
+
+  if (!(await isDirAtUri(tmpDir))) {
+    await vscode.workspace.fs.createDirectory(tmpDir).then(() => { }, () => {
+      console.log('Create dir error!');
+    });
+  }
+
+  let result = false;
+
+  const prog = await vscode.window.withProgress({
+    location: vscode.ProgressLocation.Notification,
+    title: "Downloading...",
+    cancellable: true
+  }, async (progress, token) => {
+
+    progress.report({ message: "0 Mbyte", increment: 0 });
+
+    let totalSize = 1;
+    let prevSize = 0;
+    let currentSize = 0;
+
+    let request: ClientRequest;
+
+    let isTerminated = false;
+
+    async function download(url: string | URL /*| https.RequestOptions*/, targetFile: fs.PathLike): Promise<boolean> {
+      return new Promise((resolve, reject) => {
+
+        request = https.get(url, /*{ headers: { responseType: 'arraybuffer'} } ,*/ response => {
+
+          const code = response.statusCode ?? 0
+
+          if (code >= 400) {
+            isTerminated = true;
+            reject(new Error(response.statusMessage));
+          }
+
+          // handle redirects
+          if (code > 300 && code < 400 && !!response.headers.location) {
+            resolve(download(response.headers.location, targetFile));
+            return;
+          }
+
+          totalSize = response.headers['content-length'] ? Number(response.headers['content-length']) : 1;
+          console.log(totalSize);
+
+          response.on('data', (chunk) => {
+            const buffer = chunk as Buffer;
+            prevSize = currentSize;
+
+            if (totalSize == 1) {
+              console.log("Compressed size:", buffer.readInt32LE(20));
+              console.log("Uncompressed size:", buffer.readInt32LE(24));
+              console.log("Extra field length:", buffer.readInt16LE(30));
+              totalSize = 2;
+            }
+            //currentSize += 1024*1024;//buffer.byteLength;
+            currentSize += buffer.byteLength;
+          });
+
+          response.on('error', (err) => {
+            console.log(err);
+            isTerminated = true;
+            resolve(false);
+            response.unpipe();
+          });
+
+
+          try {
+
+            let isAborted = false;
+            const fileWriter = fs.createWriteStream(targetFile, {})
+              .on('finish', async () => {
+
+
+                if (isAborted) {
+                  return;
+                }
+
+                console.log("done");
+                progress.report({ message: "Installing...", increment: -100 });
+                try {
+                  
+                  totalSize = fsExtra.statSync(tmpFilePath.fsPath).size;
+                  currentSize = 0;
+
+                  const unZipStream = fsExtra.createReadStream(tmpFilePath.fsPath).on('data', (chunk: Buffer) => {
+                    const buffer = chunk as Buffer;
+                    currentSize += buffer.length;
+                  }).on('error', (err: Error) => {
+                    throw err;
+                  });
+
+                    unZipStream.pipe(unzip.Extract({ path: libsRootDirPath.fsPath })).on('finish', async () => {
+
+                    vscode.window.showInformationMessage(`STD libs have been successuly installed!`, ...['Ok']);
+                    isTerminated = true;
+                  }).on('error', (err: Error) => {
+                    throw err;
+                  });
+
+                } catch (err) {
+                  console.log();
+                  (async () => {
+                    vscode.window.showErrorMessage(`Invalid STD libs archive!`, ...['Ok']);
+                  })();
+                }
+
+                progress.report({ message: "Installing...", increment: 100 });
+                //isTerminated = true;
+                resolve(true);
+
+              }).on('error', () => {
+                console.log("err");
+                isTerminated = true;
+                resolve(false);
+                fileWriter.close();
+              }).on('unpipe', () => {
+                isAborted = true;
+                fileWriter.close();
+              });
+
+            response.pipe(fileWriter);
+
+          } catch (err) {
+            console.log(err);
+          }
+
+
+        }).on('error', error => {
+          console.log(error);
+          isTerminated = true;
+          vscode.window.showErrorMessage(`Unknown error while downloading or installing`, ...['Ok']);
+          resolve(false);
+        }).setTimeout(10000).on('timeout', () => {
+          vscode.window.showErrorMessage(`Connection timeout.`, ...['Ok']);
+          console.log("Request timeout");
+          isTerminated = true;
+          resolve(false);
+        });
+
+        //resolve(true);
+      });
+    }
+
+    const result0 = download(targetDevice.stdlibUrl, tmpFilePath.fsPath);
+
+    token.onCancellationRequested(() => {
+      //console.log("User canceled the long running operation");
+      request.destroy();
+    });
+
+    let prevPer = 0;
+    while (!isTerminated) {
+      await new Promise(f => setTimeout(f, 100));
+      totalSize = totalSize ? totalSize : 1;
+      const inPerc = Math.round(((currentSize)) * 100 / totalSize);
+      let inc = inPerc - prevPer;
+      prevPer = inPerc;
+      const currentSizeInMb = Math.round((currentSize / 1024) / 1024);
+      const totalSizeInMb = Math.round((totalSize / 1024) / 1024);
+      console.log("[" + currentSizeInMb + "/" + totalSizeInMb + " Mbytes]", inPerc);
+      progress.report({ message: "[" + currentSizeInMb + "/" + totalSizeInMb + " Mbytes]", increment: inc });
+
+      if (token.isCancellationRequested) {
+        return false;
+      }
+
+    }
+
+    result = await result0;
+
+    return;
+  });
+
+  const stdlibPath = vscode.Uri.joinPath(
+    vscode.Uri.file(homeDir),
+    ".eec",
+    config.targetDevice.stdlibPath
+  );
+
+  return await isDirAtUri(stdlibPath);
+}
+
+
+export async function installToolchain(config: Config, toolchainInfo: ToolchainInfo): Promise<boolean> {
 
 
   let homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
@@ -294,11 +507,12 @@ export async function installToolchain(toolchainInfo: ToolchainInfo): Promise<bo
                 console.log("done");
                 progress.report({ message: "Installing...", increment: -100 });
                 try {
-                  let buttons = ['Yes', 'No'];
-                  let choice = await vscode.window.showInformationMessage(`Do you want to use clear install?`, { modal: true }, ...buttons);
-                  if (choice === buttons[0]) {
-                    fs.rmSync(vscode.Uri.joinPath(toolchainDirPath, '.eec').fsPath, { recursive: true, force: true });
-                  }
+                  // let buttons = ['Yes', 'No'];
+                  // let choice = await vscode.window.showInformationMessage(`Do you want to use clear install?`, { modal: true }, ...buttons);
+                  // if (choice === buttons[0]) {
+                  //   fs.rmSync(vscode.Uri.joinPath(toolchainDirPath, '.eec').fsPath, { recursive: true, force: true });
+                  // }
+                  fs.rmSync(vscode.Uri.joinPath(toolchainDirPath, '.eec').fsPath, { recursive: true, force: true });
 
                   totalSize = fsExtra.statSync(tmpFilePath.fsPath).size;
                   currentSize = 0;
@@ -306,10 +520,43 @@ export async function installToolchain(toolchainInfo: ToolchainInfo): Promise<bo
                   const unZipStream = fsExtra.createReadStream(tmpFilePath.fsPath).on('data', (chunk: Buffer) => {
                     const buffer = chunk as Buffer;
                     currentSize += buffer.length;
+                  }).on('error', (err: Error) => {
+                    throw err;
                   });
 
-                  unZipStream.pipe(unzip.Extract({ path: toolchainDirPath.fsPath })).on('finish', () => {
+                  unZipStream.pipe(unzip.Extract({ path: toolchainDirPath.fsPath })).on('finish', async () => {
+
+                    if (os.platform().toString() != 'win32') {
+                      let binPath = vscode.Uri.joinPath(toolchainDirPath, ".eec", "bin");
+
+                      await vscode.workspace.fs.readDirectory(binPath).then((files) => {
+                        files.forEach(element => {
+                          const subFile = vscode.Uri.joinPath(binPath, element[0]).fsPath;
+
+                          try {
+                            const fd = fs.openSync(subFile, 'r+');
+                            fs.fchmodSync(fd, 0o777);
+                            fs.closeSync(fd);
+                            if (element[0] != 'lld' && element[0].indexOf("lld") != -1) {
+                              fs.rmSync(subFile, { force: true });
+                              fs.symlinkSync('lld', subFile, 'file');
+                            }
+                          } catch (e) {
+                            vscode.window.showErrorMessage(`Can't open file ${subFile} to set file permission`, ...['Ok']);
+                            return;
+                          }
+
+                        });
+                      }, () => {
+                        console.log("err");
+                      });
+                    }
+
+
+                    vscode.window.showInformationMessage(`Toolchain has been successuly installed!`, ...['Ok']);
                     isTerminated = true;
+                  }).on('error', (err: Error) => {
+                    throw err;
                   });
 
                 } catch (err) {
@@ -348,8 +595,10 @@ export async function installToolchain(toolchainInfo: ToolchainInfo): Promise<bo
         }).on('error', error => {
           console.log(error);
           isTerminated = true;
+          vscode.window.showErrorMessage(`Unknown error while downloading or installing`, ...['Ok']);
           resolve(false);
         }).setTimeout(10000).on('timeout', () => {
+          vscode.window.showErrorMessage(`Connection timeout.`, ...['Ok']);
           console.log("Request timeout");
           isTerminated = true;
           resolve(false);
@@ -364,22 +613,57 @@ export async function installToolchain(toolchainInfo: ToolchainInfo): Promise<bo
     if (isExist) {
       progress.report({ message: "Installing...", increment: 0 });
       try {
-        let buttons = ['Yes', 'No'];
-        let choice = await vscode.window.showInformationMessage(`Do you want to use clear install?`, { modal: true }, ...buttons);
-        if (choice === buttons[0]) {
-          fs.rmSync(vscode.Uri.joinPath(toolchainDirPath, '.eec').fsPath, { recursive: true, force: true });
-        }
+        // let buttons = ['Yes', 'No'];
+        // let choice = await vscode.window.showInformationMessage(`Do you want to use clear install?`, { modal: true }, ...buttons);
+        // if (choice === buttons[0]) {
+        //   fs.rmSync(vscode.Uri.joinPath(toolchainDirPath, '.eec').fsPath, { recursive: true, force: true });
+        // }
+        fs.rmSync(vscode.Uri.joinPath(toolchainDirPath, '.eec').fsPath, { recursive: true, force: true });
 
         totalSize = fsExtra.statSync(tmpFilePath.fsPath).size;
 
         const unZipStream = fsExtra.createReadStream(tmpFilePath.fsPath).on('data', (chunk: Buffer) => {
           const buffer = chunk as Buffer;
           currentSize += buffer.length;
+        }).on('error', (err: Error) => {
+          throw err;
         });
 
-        unZipStream.pipe(unzip.Extract({ path: toolchainDirPath.fsPath })).on('finish', () => {
+        unZipStream.pipe(unzip.Extract({ path: toolchainDirPath.fsPath })).on('finish', async () => {
+
+          if (os.platform().toString() != 'win32') {
+            let binPath = vscode.Uri.joinPath(toolchainDirPath, ".eec", "bin");
+            let ldPath = vscode.Uri.joinPath(binPath, 'lld').fsPath;
+
+            await vscode.workspace.fs.readDirectory(binPath).then((files) => {
+              files.forEach(element => {
+                const subFile = vscode.Uri.joinPath(binPath, element[0]).fsPath;
+
+                try {
+                  const fd = fs.openSync(subFile, 'r+');
+                  fs.fchmodSync(fd, 0o777);
+                  fs.closeSync(fd);
+                  if (element[0] != 'lld' && element[0].indexOf("lld") != -1) {
+                    fs.rmSync(subFile, { force: true });
+                    fs.symlinkSync(ldPath, subFile, 'file');
+                  }
+                } catch (e) {
+                  vscode.window.showErrorMessage(`Can't open file ${subFile} to set file permission`, ...['Ok']);
+                  return;
+                }
+
+              });
+            }, () => {
+              console.log("err");
+            });
+          }
+
+          vscode.window.showInformationMessage(`Toolchain has been successuly installed!`, ...['Ok']);
           isTerminated = true;
+        }).on('error', (err: Error) => {
+          throw err;
         });
+
 
       } catch (err) {
         console.log();
@@ -418,7 +702,7 @@ export async function installToolchain(toolchainInfo: ToolchainInfo): Promise<bo
       if (token.isCancellationRequested) {
         return false;
       }
-      
+
     }
 
     result = await result0;
@@ -437,19 +721,17 @@ export async function installToolchain(toolchainInfo: ToolchainInfo): Promise<bo
 
   if (result) {
     const toolchainInfoFile = vscode.Uri.joinPath(toolchainDirPath, ".eec", "toolchain.json");
-    //if (getVerToInt(toolchainInfo.ver) < getVerToInt("0.9.0")) {
-      const json = JSON.stringify(toolchainInfo).toString();
-      fs.writeFileSync(toolchainInfoFile.fsPath, json, { flag: "w" });
+    const json = JSON.stringify(toolchainInfo).toString();
+    fs.writeFileSync(toolchainInfoFile.fsPath, json, { flag: "w" });
     //}
     const toolchainTmpInfoFile = vscode.Uri.joinPath(
       vscode.Uri.file(homeDir),
       ".eec-tmp", `ToolchainInfo.${toolchainInfo.file}.json`
     );
     fs.copyFileSync(toolchainInfoFile.fsPath, toolchainTmpInfoFile.fsPath);
-    const currentToolchain = await getCurrentToolchain();
-    vscode.workspace.getConfiguration("eepl").update("toolchain.version", currentToolchain, vscode.ConfigurationTarget.Global);
-  }
 
+    setCurrentToolchain(config, toolchainInfo);
+  }
 
   return result;
 }
@@ -462,9 +744,11 @@ type TargetPeriphInfo = {
   flashSize: number;
   ramSize: number;
   flashPageSize: number;
+  isDesktop: boolean;
+  isResourcesInternal: boolean;
 }
 
-export type TargetInfo = {
+export type TargetInfoOld = {
   description: string;
   devManId: number;
   devName: string;
@@ -474,21 +758,90 @@ export type TargetInfo = {
   pathToFile: string;
   stdlib: string;
   runtime: string;
+  stdlibs: string[];
+  includePaths: string[];
   periphInfo: TargetPeriphInfo;
 }
 
 
+export type TargetInfo = {
+  description: string;
+  devManId: number;
+  devName: string;
+  frameWorkVerA: number;
+  frameWorkVerB: number;
+  triplet: string;
+  pathToFile: string;
+  stdlibPath: string;
+  stdlibUrl: string;
+  linkArgs: string[];
+  isAlfSupport: boolean;
+  periphInfo: TargetPeriphInfo;
+}
 
-export async function getTargets(): Promise<TargetInfo[]> {
+export const targetInfoDefaultValue: TargetInfo = {
+  description: "[Device]",
+  devManId: -1,
+  devName: "Select Target",
+  frameWorkVerA: 0,
+  frameWorkVerB: 0,
+  triplet: "thumbv7m-none-none-eabi",
+  pathToFile: "",
+  periphInfo: {
+    aoCount: 0,
+    relayCount: 0,
+    uartCount: 0,
+    uiCount: 0,
+    flashSize: 0,
+    ramSize: 0,
+    flashPageSize: 256,
+    isDesktop: false,
+    isResourcesInternal: false
+  },
+  stdlibPath: "lib/arm-none-eabi/picolibc/arm-none-eabi/lib/release/thumb/v7-m/nofp",
+  stdlibUrl: "https://getfile.dokpub.com/yandex/get/https://disk.yandex.ru/d/TxwaYTSgJD-9cw",
+  linkArgs: [
+    "ld.lld",
+    "@out_obj",
+    "-L",
+    "${eec_path}/lib/arm-none-eabi/picolibc/arm-none-eabi/lib/release/thumb/v7-m/nofp",
+    "-nostdlib",
+    "-lc",
+    "-lm",
+    "-L",
+    "${eec_path}/lib/clang_rt",
+    "-lclang_rt.builtins-armv7m",
+    "--format=elf",
+    "@out_link_map",
+    "@in_link_map",
+    "-o",
+    "@out_exe"
+  ],
+  isAlfSupport: true
+};
+
+
+function resolveTargetInfo(config: Config, targetInfo: TargetInfo) {
+
+  if (targetInfo.linkArgs !== undefined) {
+    return;
+  }
+
+  targetInfo.stdlibPath = targetInfoDefaultValue.stdlibPath;
+  targetInfo.stdlibUrl = targetInfoDefaultValue.stdlibUrl;
+  targetInfo.linkArgs = targetInfoDefaultValue.linkArgs;
+  targetInfo.isAlfSupport = targetInfoDefaultValue.isAlfSupport;
+
+}
+
+
+export async function getTargets(config: Config): Promise<TargetInfo[]> {
 
   let targetsInfo: Array<TargetInfo> = [];
 
   const homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
   const targetsDir = vscode.Uri.joinPath(
     vscode.Uri.file(homeDir), ".eec", "targets");
-
-
-
 
   await vscode.workspace.fs.readDirectory(targetsDir).then(async (files: [string, vscode.FileType][]) => {
 
@@ -509,8 +862,9 @@ export async function getTargets(): Promise<TargetInfo[]> {
       }
 
       const raw = fs.readFileSync(targetInfoFile.fsPath).toString();
-      const targetInfo = JSON.parse(raw) as TargetInfo;
+      let targetInfo = JSON.parse(raw) as TargetInfo;
       targetInfo.pathToFile = targetInfoFile.fsPath;
+      resolveTargetInfo(config, targetInfo);
       targetsInfo.push(targetInfo);
     }
 
@@ -525,165 +879,78 @@ export async function getTargets(): Promise<TargetInfo[]> {
 
 
 export async function checkAndSetCurrentTarget(config: Config, sbSelectTargetDev: vscode.StatusBarItem) {
-  
+
   const cfgTarget = config.get<TargetInfo>('target.device');
 
-  const targets = await getTargets();
+  const targets = await getTargets(config);
+  let sTarget = targetInfoDefaultValue;
 
-  let sTarget = {
-    description: "[Device]",
-    devManId: 0,
-    devName: "Select Target",
-    frameWorkVerA: 0,
-    frameWorkVerB: 22,
-    triplet: "thumbv7m-none-none-eabi",
-    pathToFile: "",
-    periphInfo: {
-        aoCount: 3,
-        relayCount: 6,
-        uartCount: 8,
-        uiCount: 11,
-        flashSize: 256*1024,
-        ramSize: 64*1024,
-        flashPageSize: 256
-    },
-    stdlib: "armv7m",
-    runtime: "clang_rt.builtins-armv7m"
-};
-
-
-
-  if (cfgTarget != undefined && 'pathToFile' in cfgTarget) {
-
+  if (cfgTarget != undefined && cfgTarget.pathToFile !== undefined) {
     for (const target of targets) {
-
-      if (target.pathToFile == cfgTarget.pathToFile)
-      {
+      if (target.pathToFile == cfgTarget.pathToFile) {
         sTarget = cfgTarget;
         break;
       }
-
     }
-
   }
 
-  
-
   //sbSelectTargetDev.text = `$(chip)[${sTarget.devName}]`;
-  sbSelectTargetDev.text = `$(device-mobile)[${sTarget.devName}]`;
+  setCurrentTarget(sTarget, config, sbSelectTargetDev);
 
-  config.targetDevice = sTarget;
-  config.set("target.device", sTarget);
-
+  resolveTarget(config);
 }
 
 
 
 export async function setCurrentTarget(target: TargetInfo, config: Config, sbSelectTargetDev: vscode.StatusBarItem) {
-    config.targetDevice = target;
-    sbSelectTargetDev.text = `$(chip)[${target.devName}]`;
-    await config.set("target.device", target);
+  resolveTargetInfo(config, target);
+  config.targetDevice = target;
+
+  let platformIcon = '$(device-mobile)';
+  if (target.periphInfo.isDesktop) {
+    if (target.devName.indexOf('windows') != -1) {
+      platformIcon = '$(terminal-powershell)'
+    } else if (target.devName.indexOf('linux') != -1) {
+      platformIcon = '$(terminal-linux)'
+    }
+  }
+  sbSelectTargetDev.text = `${platformIcon}[${target.devName}]`;
+
+  await config.set("target.device", target);
 }
-
-
 
 
 export async function checkAndSetCurrentToolchain(config: Config, sbSelectToolchain: vscode.StatusBarItem) {
-  
-  //const cfgToolchain = config.get<ToolchainInfo>('toolchain.version');
 
-  const currentToolchain = await getCurrentToolchain();
+  const result = await checkToolchain(config);
+  const currentToolchain = result ? config.currentToolchain : undefined;
 
-  if (currentToolchain != undefined && 'label' in currentToolchain) {
-    //sbSelectToolchain.text = currentToolchain.label;
+  if (currentToolchain !== undefined && currentToolchain.label !== undefined) {
     sbSelectToolchain.text = `$(extensions)`;
     sbSelectToolchain.tooltip = `Toolchain: ${currentToolchain.label}`;
-    if (LastToolchain != undefined && LastToolchain.ver != currentToolchain.ver)
-    {
-      //sbSelectToolchain.text += "(old version)";
+    if (config.latestToolchain != undefined && config.latestToolchain.ver != currentToolchain.ver) {
       sbSelectToolchain.tooltip += "(old version)";
     }
 
-    await config.setGlobal('toolchain.version', currentToolchain);
-  }
-  else {
-      sbSelectToolchain.text = "Not installed!";
-      sbSelectToolchain.tooltip = "Select toolchain";
-      await config.setGlobal('toolchain.version', undefined);
+    setCurrentToolchain(config, currentToolchain);
+  } else {
+    sbSelectToolchain.text = "Not installed!";
+    sbSelectToolchain.tooltip = "Select toolchain";
+
+    await config.setGlobal('toolchain.version', undefined);
   }
 
 }
 
-// export async function getTargetWithDevName(devName: string): Promise<TargetInfo> {
 
+async function setCurrentToolchain(config: Config, toolchainInfo: ToolchainInfo) {
+  config.currentToolchain = toolchainInfo;
+  const currentVer = getVerToInt(toolchainInfo.ver);
+  config.isOldToolchain = currentVer < getVerToInt('0.9.0');
+  config.isInternalLinker = currentVer >= getVerToInt('0.9.25');
 
-//   const homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
-//   const targetsDir = vscode.Uri.joinPath(
-//     vscode.Uri.file(homeDir), ".eec", "targets");
-
-//   let result: TargetInfo = {
-//     description: "[Device]",
-//     devManId: 0,
-//     devName: "Device",
-//     frameWorkVerA: 0,
-//     frameWorkVerB: 40,
-//     triplet: "thumbv7m-none-none-eabi",
-//     pathToFile: "",
-//     periphInfo: {
-//       aoCount: 3,
-//       relayCount: 6,
-//       uartCount: 8,
-//       uiCount: 11,
-//       flashSize: 256 * 1024,
-//       ramSize: 64 * 1024,
-//       flashPageSize: 256
-//     },
-//     stdlib: "armv7m",
-//     runtime: "clang_rt.builtins-armv7m"
-//   };
-
-//   await vscode.workspace.fs.readDirectory(targetsDir).then(async (files: [string, vscode.FileType][]) => {
-
-
-//     for (const element of files) {
-
-//       if (element[1] != vscode.FileType.Directory) {
-//         //console.log("is not dir");
-//         continue;
-//       }
-
-//       const targetInfoFile = vscode.Uri.joinPath(targetsDir, element[0], "targetInfo.json");
-//       const isExist = await isFileAtUri(targetInfoFile);
-
-//       if (!isExist) {
-//         continue;
-//       }
-
-//       const raw = fs.readFileSync(targetInfoFile.fsPath).toString();
-//       const targetInfo = JSON.parse(raw) as TargetInfo;
-//       targetInfo.pathToFile = targetInfoFile.fsPath;
-
-//       if (targetInfo.description != devName) {
-//         if (result.description == "[Device]") {
-//           result = targetInfo;
-//         }
-//         continue;
-//       }
-
-//       result = targetInfo;
-//     }
-
-//     // files.forEach(element => {
-//     //   console.log("file: ", element[0]);
-//     // }); 
-//   }, () => {
-//     console.log("can't find toolchain dir");
-//   });
-
-//   return result;
-// }
-
-
+  await config.setGlobal("toolchain.version", config.currentToolchain);
+}
 
 
 function getVerToInt(str: string): number {
@@ -691,11 +958,12 @@ function getVerToInt(str: string): number {
   return (parseInt(nums[0]) << 16) | (parseInt(nums[1]) << 8) | (parseInt(nums[2]));
 }
 
-async function getLastToolchainInfo(): Promise<ToolchainInfo | undefined> {
+
+async function getLastToolchainInfo(config: Config): Promise<ToolchainInfo | undefined> {
 
   let lastToolchain: ToolchainInfo | undefined = undefined;
 
-  const response = await fetch("https://github.com/Retrograd-Studios/eemblangtoolchain/raw/main/toolchain.json").catch((e) => {
+  const response = await fetch(`https://github.com/Retrograd-Studios/eemblangtoolchain/raw/master/toolchain_${config.hostTriplet}.json`).catch((e) => {
     console.log(e);
     return undefined;
   });
@@ -716,19 +984,17 @@ async function getLastToolchainInfo(): Promise<ToolchainInfo | undefined> {
     }
   }
 
-  LastToolchain = lastToolchain;
+  config.latestToolchain = lastToolchain;
 
   return lastToolchain;
 }
 
 
-export let IsNightlyToolchain = false;
-
-export async function getToolchains(): Promise<ToolchainInfo[] | undefined> {
+export async function getToolchains(config: Config): Promise<ToolchainInfo[] | undefined> {
 
   let lastToolchain: ToolchainInfo | undefined = undefined;
 
-  const response = await fetch("https://github.com/Retrograd-Studios/eemblangtoolchain/raw/main/toolchain.json").catch((e) => {
+  const response = await fetch(`https://github.com/Retrograd-Studios/eemblangtoolchain/raw/master/toolchain_${config.hostTriplet}.json`).catch((e) => {
     console.log(e);
     return undefined;
   });
@@ -745,7 +1011,6 @@ export async function getToolchains(): Promise<ToolchainInfo[] | undefined> {
     }
   }
 
-  LastToolchain = lastToolchain;
   if (lastToolchain == undefined) {
     return undefined;
   }
@@ -758,10 +1023,6 @@ export async function getToolchains(): Promise<ToolchainInfo[] | undefined> {
   if (isLocal) {
     const raw = fs.readFileSync(verFile.fsPath).toString();
     const currentVer = JSON.parse(raw);
-    IsNightlyToolchain = (currentVer.ver == lastToolchain.ver);
-  }
-  else {
-    IsNightlyToolchain = false;
   }
 
   return data.toolchains;
@@ -769,55 +1030,35 @@ export async function getToolchains(): Promise<ToolchainInfo[] | undefined> {
 }
 
 
-export var isFoundToolchain = false;
+export async function IsToolchainInstalled(config: Config): Promise<boolean> {
 
-
-export async function IsToolchainInstalled(): Promise<boolean> {
-
-    if (!isFoundToolchain) {
-      isFoundToolchain = await checkToolchain();
-      if (!isFoundToolchain)
-      {
-          vscode.window.showErrorMessage(`EEmbLang Compiler is not installed! Can't find toolchain`);
-          return false;//new Promise((resolve, reject) => { reject(); });
-      }
+  if (await checkToolchain(config)) {
+    return true;
   }
 
-  return true;
-
+  vscode.window.showErrorMessage(`EEmbLang Compiler is not installed! Can't find toolchain`, { modal: true });
+  return false;
 }
 
 
+async function checkToolchain(config: Config): Promise<boolean> {
 
-export async function checkToolchain(): Promise<boolean> {
-
-  //let path = await toolchain.easyPath();
-  //console.log(path);
   const homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
-  // const standardTmpPath = vscode.Uri.joinPath(
-  //   vscode.Uri.file(homeDir),
-  //   ".eec.zip");
-
-  //   const standardPath = vscode.Uri.joinPath(
-  //     vscode.Uri.file(homeDir));
-  //   console.log(standardTmpPath);
-
   const verFile = vscode.Uri.joinPath(
     vscode.Uri.file(homeDir), ".eec", "toolchain.json");
 
   const toolchainFile = await isFileAtUri(verFile);
 
   if (!toolchainFile) {
+    config.currentToolchain = undefined;
+
     let buttons = ['Install', 'Not now'];
-    let choice = await vscode.window.showWarningMessage(`EEmbLang Toolchain is not installed!\nDo you want Download and Install now?`, { modal: true }, ...buttons);
+    let choice = await vscode.window.showWarningMessage(`EEPL Toolchain is not installed!\nDo you want Download and Install now?`, { modal: true }, ...buttons);
     if (choice === buttons[0]) {
-      const toolchainInfo = await getLastToolchainInfo();
-      let res = toolchainInfo != undefined ? await installToolchain(toolchainInfo) : false;
+      const toolchainInfo = await getLastToolchainInfo(config);
+      let res = toolchainInfo != undefined ? await installToolchain(config, toolchainInfo) : false;
       if (!res) {
         vscode.window.showErrorMessage(`Error: EEmbLang Toolchain is not installed!\nCan't download file`);
-      }
-      else {
-        IsNightlyToolchain = true;
       }
       //await new Promise(f => setTimeout(f, 3000));
       //await vscode.commands.executeCommand('eepl.command.setTargetDevice');
@@ -826,65 +1067,181 @@ export async function checkToolchain(): Promise<boolean> {
     return false;
   }
 
-  // type CfgType = {
-  //   ver: string;
-  // }
-
-  // function isCfgType(o: any): o is CfgType {
-  //   return "ver" in o 
-  // }
-
-  const lastToolchain = await getLastToolchainInfo();
-  if (lastToolchain == undefined) {
+  if (config.latestToolchain !== undefined) {
     return true;
   }
-  // const parsed = JSON.parse(json)
-  //if (isCfgType(data)) {
-  //console.log(data.ver);
 
-  const raw = fs.readFileSync(verFile.fsPath).toString();
-  const currentVer = JSON.parse(raw);
+  const lastToolchain = await getLastToolchainInfo(config);
+  if (lastToolchain === undefined) {
+    return true;
+  }
 
-  if (currentVer.ver != lastToolchain.ver) {
-    IsNightlyToolchain = false;
+  if (config.currentToolchain === undefined) {
+    const raw = fs.readFileSync(verFile.fsPath).toString();
+    config.currentToolchain = JSON.parse(raw) as ToolchainInfo;
+  }
+
+  if (config.currentToolchain.ver != lastToolchain.ver) {
     let buttons = ['Install', 'Not now'];
     let choice = await vscode.window.showInformationMessage(`New  EEPL Toolchain (v${lastToolchain.ver}) is available!\nDo you want Download and Install now?`, ...buttons);
     if (choice === buttons[0]) {
-      const res = await installToolchain(lastToolchain);
-      if (res) {
-        IsNightlyToolchain = true;
-      }
+      const res = await installToolchain(config, lastToolchain);
       return res;
     }
   }
-  else {
-    IsNightlyToolchain = true;
-  }
-  //}
 
   return true;
-
 }
 
-export async function getCurrentToolchain(): Promise<ToolchainInfo | undefined> {
+// export async function getCurrentToolchain(): Promise<ToolchainInfo | undefined> {
 
-  const homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
+//   const homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
 
-  const verFile = vscode.Uri.joinPath(
-    vscode.Uri.file(homeDir), ".eec", "toolchain.json");
+//   const verFile = vscode.Uri.joinPath(
+//     vscode.Uri.file(homeDir), ".eec", "toolchain.json");
 
-  const toolchainFile = await isFileAtUri(verFile);
+//   const toolchainFile = await isFileAtUri(verFile);
 
-  if (!toolchainFile) {
-    return undefined;
+//   if (!toolchainFile) {
+//     return undefined;
+//   }
+
+//   const raw = fs.readFileSync(verFile.fsPath).toString();
+
+//   const currentToolchain: ToolchainInfo = JSON.parse(raw);
+
+//   return currentToolchain;
+
+// }
+
+
+async function resolveStdLibs(config: Config): Promise<boolean> {
+
+  let homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
+  const stdlibPath = vscode.Uri.joinPath(
+    vscode.Uri.file(homeDir),
+    ".eec",
+    config.targetDevice.stdlibPath
+  );
+
+  if (await isDirAtUri(stdlibPath)) {
+    return true;
   }
 
-  const raw = fs.readFileSync(verFile.fsPath).toString();
+  let buttons = ['Install', 'Not now'];
+  let choice = await vscode.window.showWarningMessage(
+    `STD Libs for triplet '${config.targetDevice.triplet}' is not installed!
+Do you want Download and Install now?`, { modal: true }, ...buttons);
 
-  const currentToolchain: ToolchainInfo = JSON.parse(raw);
+  if (choice === buttons[1]) {
+    return false;
+  }
 
-  return currentToolchain;
+  return installStdLibs(config, config.targetDevice);
+}
 
+
+export async function resolveTarget(config: Config): Promise<boolean> {
+
+  let workspaceTarget: vscode.WorkspaceFolder | undefined = undefined;
+
+  for (const workspaceTarget0 of vscode.workspace.workspaceFolders || []) {
+    workspaceTarget = workspaceTarget0;
+    break;
+  }
+
+  if (config.targetDevice.devManId === targetInfoDefaultValue.devManId) {
+    await vscode.commands.executeCommand('eepl.command.setTargetDevice');
+    if (config.targetDevice.devManId === targetInfoDefaultValue.devManId) {
+      return false;
+    }
+  }
+
+  if (!await resolveStdLibs(config)) {
+    return false;
+  }
+
+  const devName = config.targetDevice.devName;
+  const cwd = "${cwd}";
+
+  const isOldToolchain = config.isOldToolchain;
+
+  const outputPath = isOldToolchain ? `${workspaceTarget!.uri.fsPath}/out/${devName}/output` : `${workspaceTarget!.uri.fsPath}/out/${devName}`;
+
+  let productName = 'output';
+  let productPath = `${outputPath}`;
+
+  if (!isOldToolchain) {
+
+    const compilerOutputPath = `${outputPath}/.eec_cache/EECompilerOutput.json`;
+
+    if (fs.existsSync(compilerOutputPath)) {
+
+      const rowFile = fs.readFileSync(compilerOutputPath).toString();
+      const eecOutput: EECompilerOutput = JSON.parse(rowFile);
+
+      productName = eecOutput.productName;
+      productPath = `${productPath}/${productName}`;
+
+    } else {
+      productPath = `${productPath}/output`;
+    }
+
+  }
+
+  if (isOldToolchain) {
+
+    config.uploadingFilePath = `${cwd}/out/${devName}/prog.alf`;
+    config.exePath = `${cwd}/out/${devName}/output.elf`;
+    config.productPath = `${productPath}/output`;
+    config.productName = productName;
+
+  }
+  else {
+
+    config.uploadingFilePath = `${productPath}.alf`;
+    config.productPath = `${productPath}`;
+    config.productName = productName;
+
+
+    if (config.targetDevice.devName.indexOf("windows") != -1) {
+
+      config.exePath = `${productPath}.exe`;
+
+
+    } else {
+
+      config.exePath = `${productPath}.elf`;
+    }
+
+  }
+
+  if (config.isInternalLinker) {
+    return true;
+  }
+
+  const homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
+  const eecPath = vscode.Uri.joinPath(
+    vscode.Uri.file(homeDir), ".eec");
+
+  config.targetDevice.linkArgs = [
+    `${config.productPath}.o`,
+    "-L",
+    `${eecPath.fsPath}/lib/arm-none-eabi/picolibc/arm-none-eabi/lib/release/thumb/v7-m/nofp`,
+    "-nostdlib",
+    "-lc",
+    "-lm",
+    "-L",
+    `${eecPath.fsPath}/lib/clang_rt`,
+    "-lclang_rt.builtins-armv7m",
+    "--format=elf",
+    `--Map=${config.productPath}.map`,
+    `${eecPath.fsPath}/targets/${devName}/target_out.ld`,
+    "-o",
+    config.exePath
+  ];
+
+  return true;
 }
 
 

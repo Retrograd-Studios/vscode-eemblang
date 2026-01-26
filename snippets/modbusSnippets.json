@@ -1,0 +1,106 @@
+{
+	"Typed Modbus HOLDING reg": {
+			"prefix": ["MODBUS", "MB", "Holding"],
+			"body": ["MODBUS_ADD_LOCAL_H_REG($${1:int16}$ ${2:regName/auto}, ${3:regAddr/auto}, ${4:minValue}, ${5:maxValue}, ${6:default}, ${7:saveToROM}, ${8:MB_BIG_ENDIAN_WORDS})"],
+			"description": "Add local modbus holding register with type define"
+		},
+
+		"Modbus HOLDING reg": {
+			"prefix": ["MODBUS", "MB", "Holding"],
+			"body": ["MODBUS_ADD_LOCAL_H_REG(${1:regName/auto}, ${2:regAddr/auto}, ${3:minValue}, ${4:maxValue}, ${5:default}, ${6:saveToROM}, ${7:MB_BIG_ENDIAN_WORDS})"],
+			"description": "Add local modbus holding register"
+		},
+
+		"Typed Modbus INPUT reg": {
+			"prefix": ["MODBUS", "MB", "Input"],
+			"body": ["MODBUS_ADD_LOCAL_I_REG($${1:int16}$ ${2:regName/auto}, ${3:regAddr/auto}, ${4:default}, ${5:MB_BIG_ENDIAN_WORDS})"],
+			"description": "Add local modbus input register with type define"
+		},
+
+		"Modbus INPUT reg": {
+			"prefix": ["MODBUS", "MB", "Input"],
+			"body": ["MODBUS_ADD_LOCAL_I_REG(${1:regName/auto}, ${2:regAddr/auto}, ${3:default})"],
+			"description": "Add local modbus input register"
+		},
+
+		"Modbus DO reg": {
+			"prefix": ["DO", "Coils", "MODBUS", "MB", "DISCRETE"],
+			"body": ["MODBUS_ADD_LOCAL_DISCRETE_REG(${1:regName/auto}, MB_L_DO, ${2:regAddr/auto}, ${3:count}, ${4:default}, ${5:saveToROM})"],
+			"description": "Add local Discrete outputs (Coils) modbus registers"
+		},
+
+		"Modbus DI reg": {
+			"prefix":  ["DI", "MODBUS", "MB", "DISCRETE"],
+			"body": ["MODBUS_ADD_LOCAL_DISCRETE_REG(${1:regName/auto}, MB_L_DI, ${2:regAddr/auto}, ${3:count}, ${4:default}, ${5:saveToROM})"],
+			"description": "Add local Discrete outputs (Coils) modbus registers"
+		},
+
+		"Typed Modbus Remote reg": {
+			"prefix": ["MODBUS", "MB", "remote", "reg"],
+			"body": ["tMODBUS_ADD_REMOTE_REG($${1:int16}$ ${2:regName/auto}, MB_REM_${3:HOLDING/INPUT/DO/DI}, ${4:regAddr/auto}, ${5:MB_BIG_ENDIAN_WORDS})"],
+			"description": "Add modbus reg for remote device with type define"
+		},
+
+		"Modbus Remote reg": {
+			"prefix": ["MODBUS", "MB", "remote", "reg"],
+			"body": ["tMODBUS_ADD_REMOTE_REG(${1:regName/auto}, MB_REM_${2:HOLDING/INPUT/DO/DI}, ${3:regAddr/auto}, ${4:MB_BIG_ENDIAN_WORDS})"],
+			"description": "Add modbus reg for remote device"
+		},
+
+		"Big Endian": {
+			"prefix": ["Endian", "Big"],
+			"body": ["MB_BIG_ENDIAN/MB_BIG_ENDIAN_WORDS/MB_BE_SEQ_LE_WORDS"],
+			"description": "Modbus register data endian type."
+		},
+
+		"Little Endian": {
+			"prefix": ["Endian", "Little"],
+			"body": ["MB_LITTLE_ENDIAN/MB_BE_SEQ_LE_WORDS"],
+			"description": "Modbus register data endian type."
+		},
+
+		"struct Remote Module/Device": {
+			"prefix":  ["struct", "remote", "modbus", "slave"],
+			"body": [
+				"struct ${1:deviceStructName} {\n", 
+				"\tMODBUS_MODULE_DECLARE_BEGIN()\n", 
+				"\tMODBUS_ADD_REMOTE_REG($${2:int16}$ ${3:regName/auto}, MB_REM_${4:HOLDING/INPUT/DO/DI}, ${5:regAddr/auto}, ${7:MB_BIG_ENDIAN_WORDS})\n",
+				"\tMODBUS_MODULE_DECLARE_END()\n",
+				"\tfunc init(portNum: uint32, devAddr: uint32, interval: uint32) {",
+				"\t\tself.comPort = portNum",
+				"\t\tself.devAddr = devAddr",
+				"\t\tself.interval = interval",
+				"\t\tself.interval2 = 10000",
+				"\t\tself.timeout = 100",
+				"\t\tself.reqTryCount = 3",
+				"\t\tself.isEnabled = true",
+				"\t\tself.packSize = 0",
+				"\t\tself.isHoldingsRead = true",
+				"\t\tself.isAutoRead = true",
+				"\t\tself.isShowMessages = true",
+				"\t\tself.isMultipleWrite = true",
+				"\t\tself.errorCallback = $(device, errorCode, regAddr) {",
+				"\t\t\t//to do...",
+				"\t\t}",
+				"\t\tself.connectionRestoreCallback = $(device) {",
+				"\t\t\tdevice.errors = 0",
+				"\t\t}",
+				"\t\tself.changedRegValueCallback = $(reg) {",
+				"\t\t\tif reg.ptr == remoteDevice.regName.ptr {",
+				"\t\t\t\treturn true",
+				"\t\t\t}",
+				"\t\t}",
+				"\t\tMODBUS_MODULE_INIT(self)\n",
+				"\t}",
+				"}"
+
+			],
+			"description": "Modbus template for own struct for slave device"
+		},
+
+		"MODBUS_CFG": {
+			"prefix": ["MODBUS_CFG", "MB", "MODBUS", "CFG"],
+			"body": ["MODBUS_CFG(UART_COM_${1:0}, ${2:isMasterMode}, ${3:timeout(mSec)}, ${4:modbusAddr})"],
+			"description": "Set modbus config"
+		}
+}

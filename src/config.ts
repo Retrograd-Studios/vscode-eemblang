@@ -3,7 +3,7 @@ import * as os from "os";
 import * as vscode from "vscode";
 //import { Env } from "./client";
 //import { log } from "./util";
-import { TargetInfo } from "./toolchain";
+import { TargetInfo, targetInfoDefaultValue, ToolchainInfo } from "./toolchain";
 
 
 // export type RunnableEnvCfg =
@@ -15,31 +15,37 @@ export class Config {
 
     context: vscode.ExtensionContext;
 
-    readonly extensionId = "YouTooLife.vscode-eemblang";
+    readonly extensionId = "Retrograd-Studios.moderon-logic";
     configureLang: vscode.Disposable | undefined;
 
-    targetDevice: TargetInfo = {
-        description: "[Device]",
-        devManId: 0,
-        devName: "Select Target",
-        frameWorkVerA: 0,
-        frameWorkVerB: 22,
-        triplet: "thumbv7m-none-none-eabi",
-        pathToFile: "",
-        periphInfo: {
-            aoCount: 3,
-            relayCount: 6,
-            uartCount: 8,
-            uiCount: 11,
-            flashSize: 256*1024,
-            ramSize: 64*1024,
-            flashPageSize: 256
-        },
-        stdlib: "armv7m",
-        runtime: "clang_rt.builtins-armv7m"
-      };
+    targetDevice: TargetInfo = targetInfoDefaultValue;
+    currentToolchain: ToolchainInfo | undefined = undefined;
+    latestToolchain: ToolchainInfo | undefined = undefined;
+
+    productPath: string = "./out/output";
+    exePath: string = "./out/output";
+    uploadingFilePath: string = "./out/prog.alf";
+    productName: string = "output";
+
+    hostTriplet: string = "x64-win";
+
+    isOldToolchain: boolean = false;
+    isInternalLinker: boolean = false;
 
     readonly rootSection = "eepl";
+    // config: {
+    //     description: string; devManId: number; devName: string; frameWorkVerA: number; frameWorkVerB: number; triplet: string;
+    //     //     if (varName in supportedVariables) {
+    //     //         return supportedVariables[varName]();
+    //     //     } else {
+    //     //         // return "${" + varName + "}";
+    //     //         return null;
+    //     //     }
+    //     pathToFile: string; periphInfo: {
+    //         aoCount: number; relayCount: number; uartCount: number; uiCount: number; flashSize: number; //         return null;
+    //         ramSize: number; flashPageSize: number;
+    //     }; stdlib: string; runtime: string;
+    // };
     // private readonly requiresReloadOpts = [
     //     "easy",
     //     "procMacro",

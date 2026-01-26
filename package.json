@@ -2,10 +2,10 @@
     "name": "moderon-logic",
     "displayName": "Moderon Logic",
     "description": "EEPL (Easy Embedded sytems Programming Language) Support, Compiler, Debugger, Simulator, Flasher and code browsing.",
-    "version": "0.9.0",
+    "version": "0.9.11",
     "icon": "icon.png",
     "repository": {
-        "url": "https://github.com/Retrograd-Studios/vscode-eemblang.git",
+        "url": "https://github.com/Retrograd-Studios/moderon-logic.git",
         "type": "git"
     },
     "publisher": "Retrograd-Studios",
@@ -303,7 +303,8 @@
             },
             {
                 "command": "eepl.command.progress",
-                "title": "example"
+                "title": "example",
+                "category": "EEPL"
             },
             {
                 "command": "eepl.command.compileProject",
@@ -435,18 +436,6 @@
                         ],
                         "description": "SerialPort StopBits"
                     },
-                    "eepl.eflash.test": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        },
-                        "default": [
-                            "123",
-                            ""
-                        ],
-                        "description": "Test array"
-                    },
-
                     "eepl.build.optimization": {
                         "type": "string",
                         "default": "-O3",
@@ -489,7 +478,7 @@
                             "Generate debug information. Enable -O3 level optimizations. Enable Runtime checks.",
                             "Discard debug information. Enable -O3 level optimizations. Disable Runtime checks.",
                             "Discard debug information. Enable -O3 level optimizations. Enable Runtime checks.",
-                            "User defined optimization level, on/off generate debug information, on/off Runtime checks." 
+                            "User defined optimization level, on/off generate debug information, on/off Runtime checks."
                         ],
                         "description": "Presets for build configuration."
                     },
@@ -537,6 +526,11 @@
                             "Two stop bits"
                         ],
                         "description": "GDB SerialPort Bridge StopBits"
+                    },
+                    "eepl.lsp.port": {
+                        "type": "number",
+                        "default": 9091,
+                        "description": "Port for EEPL Language Server"
                     }
                 }
             }
@@ -574,12 +568,27 @@
                     "group": "navigation@5"
                 }
             ]
-        }
+        },
+        "snippets": [
+            {
+                "language": "eepl",
+                "path": "./snippets/snippets.json"
+            },
+            {
+                "language": "eepl",
+                "path": "./snippets/guiSnippets.json"
+            },
+            {
+                "language": "eepl",
+                "path": "./snippets/modbusSnippets.json"
+            }
+        ]
     },
     "dependencies": {
         "fs-extra": "^11.2.0",
         "node-fetch": "^3.3.0",
         "unzip-stream": "^0.3.4",
-        "vsce": "^2.15.0"
+        "@vscode/vsce": "^3.2.1",
+        "vscode-languageclient": "^9.0.1"
     }
 }
