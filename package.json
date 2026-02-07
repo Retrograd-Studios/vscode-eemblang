@@ -47,27 +47,27 @@
     },
     "devDependencies": {
         "@types/fs-extra": "^11.0.4",
-        "@types/glob": "^8.0.0",
+        "@types/glob": "^9.0.0",
         "@types/mocha": "^10.0.0",
-        "@types/node": "16.x",
+        "@types/node": "^25.1.0",
         "@types/unzip-stream": "^0.3.4",
-        "@types/vscode": "^1.72.0",
-        "@typescript-eslint/eslint-plugin": "^5.38.1",
-        "@typescript-eslint/parser": "^5.38.1",
-        "@vscode/test-electron": "^2.1.5",
-        "eslint": "^8.24.0",
-        "glob": "^8.0.3",
-        "http-proxy-agent": "^2.1.0",
-        "https-proxy-agent": "^2.2.4",
-        "mkdirp": "^1.0.3",
-        "mocha": "^10.0.0",
-        "tmp": "0.2.1",
-        "ts-loader": "^9.4.1",
-        "typescript": "^4.8.4",
-        "vscode-debugadapter-testsupport": "1.37.0",
-        "webpack": "^5.74.0",
-        "webpack-cli": "^4.10.0",
-        "yauzl": "^2.10.0"
+        "@types/vscode": "^1.108.1",
+        "@typescript-eslint/eslint-plugin": "^8.54.0",
+        "@typescript-eslint/parser": "^8.54.0",
+        "@vscode/test-electron": "^2.5.2",
+        "@vscode/debugadapter-testsupport": "^1.68.0",
+        "eslint": "^9.39.2",
+        "glob": "^13.0.0",
+        "http-proxy-agent": "^7.0.2",
+        "https-proxy-agent": "^7.0.6",
+        "mkdirp": "^3.0.1",
+        "mocha": "^11.7.5",
+        "tmp": "^0.2.5",
+        "ts-loader": "^9.5.4",
+        "typescript": "^5.9.3",
+        "webpack": "^5.104.1",
+        "webpack-cli": "^6.0.1",
+        "yauzl": "^3.2.0"
     },
     "contributes": {
         "languages": [
@@ -585,10 +585,10 @@
         ]
     },
     "dependencies": {
-        "fs-extra": "^11.2.0",
-        "node-fetch": "^3.3.0",
+        "fs-extra": "^11.3.3",
+        "node-fetch": "^3.3.2",
         "unzip-stream": "^0.3.4",
-        "@vscode/vsce": "^3.2.1",
+        "@vscode/vsce": "^3.7.1",
         "vscode-languageclient": "^9.0.1"
     }
 }

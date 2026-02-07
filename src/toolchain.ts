@@ -177,6 +177,7 @@ export type ToolchainInfo = {
   description: string;
   ver: string;
   url: string;
+  api: number;
 }
 
 export type ToolchainsFile = {
@@ -298,7 +299,7 @@ async function installStdLibs(config: Config, targetDevice: TargetInfo): Promise
                 console.log("done");
                 progress.report({ message: "Installing...", increment: -100 });
                 try {
-                  
+
                   totalSize = fsExtra.statSync(tmpFilePath.fsPath).size;
                   currentSize = 0;
 
@@ -309,7 +310,7 @@ async function installStdLibs(config: Config, targetDevice: TargetInfo): Promise
                     throw err;
                   });
 
-                    unZipStream.pipe(unzip.Extract({ path: libsRootDirPath.fsPath })).on('finish', async () => {
+                  unZipStream.pipe(unzip.Extract({ path: libsRootDirPath.fsPath })).on('finish', async () => {
 
                     vscode.window.showInformationMessage(`STD libs have been successuly installed!`, ...['Ok']);
                     isTerminated = true;
@@ -403,6 +404,12 @@ async function installStdLibs(config: Config, targetDevice: TargetInfo): Promise
 
 export async function installToolchain(config: Config, toolchainInfo: ToolchainInfo): Promise<boolean> {
 
+  if (toolchainInfo.api !== undefined && config.api < toolchainInfo.api) {
+    await vscode.window.showErrorMessage(`The selected Toolchain requires v${toolchainInfo.api} API, but VSCode extension has v${config.api} API.
+Please update your VSCode extension for EEPL!`, {modal: true});
+      return false;
+  }
+
 
   let homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
 
@@ -446,8 +453,6 @@ export async function installToolchain(config: Config, toolchainInfo: ToolchainI
     let request: ClientRequest;
 
     let isTerminated = false;
-
-
 
     async function download(url: string | URL /*| https.RequestOptions*/, targetFile: fs.PathLike): Promise<boolean> {
       return new Promise((resolve, reject) => {
@@ -730,7 +735,7 @@ export async function installToolchain(config: Config, toolchainInfo: ToolchainI
     );
     fs.copyFileSync(toolchainInfoFile.fsPath, toolchainTmpInfoFile.fsPath);
 
-    setCurrentToolchain(config, toolchainInfo);
+    await setCurrentToolchain(config, toolchainInfo);
   }
 
   return result;
@@ -763,20 +768,20 @@ export type TargetInfoOld = {
   periphInfo: TargetPeriphInfo;
 }
 
-
 export type TargetInfo = {
   description: string;
   devManId: number;
   devName: string;
   frameWorkVerA: number;
   frameWorkVerB: number;
+  frameworkSize: number;
+  periphInfo: TargetPeriphInfo;
   triplet: string;
   pathToFile: string;
   stdlibPath: string;
   stdlibUrl: string;
   linkArgs: string[];
   isAlfSupport: boolean;
-  periphInfo: TargetPeriphInfo;
 }
 
 export const targetInfoDefaultValue: TargetInfo = {
@@ -785,6 +790,7 @@ export const targetInfoDefaultValue: TargetInfo = {
   devName: "Select Target",
   frameWorkVerA: 0,
   frameWorkVerB: 0,
+  frameworkSize: 0,
   triplet: "thumbv7m-none-none-eabi",
   pathToFile: "",
   periphInfo: {
@@ -895,7 +901,7 @@ export async function checkAndSetCurrentTarget(config: Config, sbSelectTargetDev
   }
 
   //sbSelectTargetDev.text = `$(chip)[${sTarget.devName}]`;
-  setCurrentTarget(sTarget, config, sbSelectTargetDev);
+  await setCurrentTarget(sTarget, config, sbSelectTargetDev);
 
   resolveTarget(config);
 }
@@ -922,7 +928,7 @@ export async function setCurrentTarget(target: TargetInfo, config: Config, sbSel
 
 export async function checkAndSetCurrentToolchain(config: Config, sbSelectToolchain: vscode.StatusBarItem) {
 
-  const result = await checkToolchain(config);
+  const result = await checkToolchain(config, true, false);
   const currentToolchain = result ? config.currentToolchain : undefined;
 
   if (currentToolchain !== undefined && currentToolchain.label !== undefined) {
@@ -932,14 +938,15 @@ export async function checkAndSetCurrentToolchain(config: Config, sbSelectToolch
       sbSelectToolchain.tooltip += "(old version)";
     }
 
-    setCurrentToolchain(config, currentToolchain);
-  } else {
-    sbSelectToolchain.text = "Not installed!";
-    sbSelectToolchain.tooltip = "Select toolchain";
-
-    await config.setGlobal('toolchain.version', undefined);
+    await setCurrentToolchain(config, currentToolchain);
+    return true;
   }
 
+  sbSelectToolchain.text = "Not installed!";
+  sbSelectToolchain.tooltip = "Select toolchain";
+  await config.setGlobal('toolchain.version', undefined);
+
+  return false;
 }
 
 
@@ -1032,16 +1039,16 @@ export async function getToolchains(config: Config): Promise<ToolchainInfo[] | u
 
 export async function IsToolchainInstalled(config: Config): Promise<boolean> {
 
-  if (await checkToolchain(config)) {
+  if (await checkToolchain(config, false, true)) {
     return true;
   }
 
-  vscode.window.showErrorMessage(`EEmbLang Compiler is not installed! Can't find toolchain`, { modal: true });
+  await vscode.window.showErrorMessage(`EEPL Compiler is not installed! Can't find toolchain`, { modal: true });
   return false;
 }
 
 
-async function checkToolchain(config: Config): Promise<boolean> {
+async function checkToolchain(config: Config, isCheckLatest: boolean, isSyncCheckLatest: boolean): Promise<boolean> {
 
   const homeDir = os.type() === "Windows_NT" ? os.homedir() : os.homedir();
   const verFile = vscode.Uri.joinPath(
@@ -1060,20 +1067,9 @@ async function checkToolchain(config: Config): Promise<boolean> {
       if (!res) {
         vscode.window.showErrorMessage(`Error: EEmbLang Toolchain is not installed!\nCan't download file`);
       }
-      //await new Promise(f => setTimeout(f, 3000));
-      //await vscode.commands.executeCommand('eepl.command.setTargetDevice');
       return res;
     }
     return false;
-  }
-
-  if (config.latestToolchain !== undefined) {
-    return true;
-  }
-
-  const lastToolchain = await getLastToolchainInfo(config);
-  if (lastToolchain === undefined) {
-    return true;
   }
 
   if (config.currentToolchain === undefined) {
@@ -1081,13 +1077,39 @@ async function checkToolchain(config: Config): Promise<boolean> {
     config.currentToolchain = JSON.parse(raw) as ToolchainInfo;
   }
 
-  if (config.currentToolchain.ver != lastToolchain.ver) {
+  if (!isCheckLatest || config.latestToolchain !== undefined) {
+    return true;
+  }
+
+  const checkLatestToolchain = async () => {
+    const lastToolchain = await getLastToolchainInfo(config);
+
+    if (config.currentToolchain === undefined) {
+      return false;
+    }
+
+    if (lastToolchain === undefined) {
+      return true;
+    }
+
+    if (getVerToInt(config.currentToolchain.ver) >= getVerToInt(lastToolchain.ver)) {
+      return true;
+    }
+
     let buttons = ['Install', 'Not now'];
     let choice = await vscode.window.showInformationMessage(`New  EEPL Toolchain (v${lastToolchain.ver}) is available!\nDo you want Download and Install now?`, ...buttons);
     if (choice === buttons[0]) {
       const res = await installToolchain(config, lastToolchain);
       return res;
     }
+
+    return true;
+  };
+
+  if (isSyncCheckLatest) {
+    return await checkLatestToolchain();
+  } else {
+    config.toolchainInstallerResult = checkLatestToolchain();
   }
 
   return true;
@@ -1162,7 +1184,6 @@ export async function resolveTarget(config: Config): Promise<boolean> {
   }
 
   const devName = config.targetDevice.devName;
-  const cwd = "${cwd}";
 
   const isOldToolchain = config.isOldToolchain;
 
@@ -1173,31 +1194,53 @@ export async function resolveTarget(config: Config): Promise<boolean> {
 
   if (!isOldToolchain) {
 
-    const compilerOutputPath = `${outputPath}/.eec_cache/EECompilerOutput.json`;
+    if (config.isInternalLinker) {
 
-    if (fs.existsSync(compilerOutputPath)) {
+      const packageInfoPath = `${workspaceTarget!.uri.fsPath}/PackageInfo.es`;
+      if (fs.existsSync(packageInfoPath)) {
 
-      const rowFile = fs.readFileSync(compilerOutputPath).toString();
-      const eecOutput: EECompilerOutput = JSON.parse(rowFile);
+        const rowFile = fs.readFileSync(packageInfoPath).toString();
 
-      productName = eecOutput.productName;
+        const regex = /\s*(BuildApp|BuildLib)\s*\(\s*(\S+)\s*\)/;
+        const dateString = rowFile;
+
+        const match = dateString.match(regex);
+        if (match) {
+          productName = match[2];
+        } else {
+          productName = "main";
+        }
+
+      } else {
+        productName = "main";
+      }
+
       productPath = `${productPath}/${productName}`;
 
     } else {
-      productPath = `${productPath}/output`;
-    }
+      const compilerOutputPath = `${outputPath}/.eec_cache/EECompilerOutput.json`;
 
+      if (fs.existsSync(compilerOutputPath)) {
+
+        const rowFile = fs.readFileSync(compilerOutputPath).toString();
+        const eecOutput: EECompilerOutput = JSON.parse(rowFile);
+
+        productName = eecOutput.productName;
+        productPath = `${productPath}/${productName}`;
+
+      } else {
+        productPath = `${productPath}/output`;
+      }
+    }
   }
 
   if (isOldToolchain) {
-
+    const cwd = "${cwd}";
     config.uploadingFilePath = `${cwd}/out/${devName}/prog.alf`;
     config.exePath = `${cwd}/out/${devName}/output.elf`;
     config.productPath = `${productPath}/output`;
     config.productName = productName;
-
-  }
-  else {
+  } else {
 
     config.uploadingFilePath = `${productPath}.alf`;
     config.productPath = `${productPath}`;

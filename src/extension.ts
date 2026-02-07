@@ -1,523 +1,31 @@
 import * as vscode from 'vscode';
 
-
 import * as fs from 'fs';
-import * as https from 'https';
 import * as tasks from './tasks';
 import * as toolchain from './toolchain';
 
-import * as cp from "child_process";
-
 import { Config } from "./config";
 import { activateTaskProvider, createTask } from "./tasks";
-import { isEasyDocument } from "./util";
-
-import * as readline from "readline";
 
 import { EasyConfigurationProvider, runDebug } from "./dbg";
 
 import * as os from "os";
 
-
-
 import { checkPackages } from './packages';
 import { createNewProject, selectExamples } from './examples';
 import { EFlasherClient } from './EFlasher/eflasher';
 import { EGDBServer } from './EGDB_Server/egdbServer';
-
-
-import {
-  Executable,
-  LanguageClient,
-  LanguageClientOptions,
-  RevealOutputChannelOn,
-  ServerOptions,
-  State,
-  StreamInfo,
-  TransportKind
-} from 'vscode-languageclient/node';
-
-import * as net from 'net';
-import { log } from 'console';
-
-
-
-
-
-
-
-
-export type Workspace =
-  | { kind: "Empty" }
-  | {
-    kind: "Workspace Folder";
-  }
-  | {
-    kind: "Detached Files";
-    files: vscode.TextDocument[];
-  };
-
-
-export function fetchWorkspace(): Workspace {
-  const folders = (vscode.workspace.workspaceFolders || []).filter(
-    (folder) => folder.uri.scheme === "file"
-  );
-  const rustDocuments = vscode.workspace.textDocuments.filter((document) =>
-    isEasyDocument(document)
-  );
-
-  return folders.length === 0
-    ? rustDocuments.length === 0
-      ? { kind: "Empty" }
-      : {
-        kind: "Detached Files",
-        files: rustDocuments,
-      }
-    : { kind: "Workspace Folder" };
-}
-
-
-async function checkDepencies() {
-
-
-  let extName = "marus25.cortex-debug";
-  //let extName = "vadimcn.vscode-lldb";
-
-  let debugEngine = vscode.extensions.getExtension(extName);
-
-  if (!debugEngine) {
-    let buttons = ['Install', 'Not now'];
-    let choice = await vscode.window.showWarningMessage(`Extension '${extName}' is not installed! It is required for debugging.\n Install now?`, ...buttons);
-    if (choice === buttons[0]) {
-      await vscode.commands.executeCommand('workbench.extensions.installExtension', extName).then(() => {
-        vscode.window.showInformationMessage(`Extension '${extName}' has been successfully installed`);
-      }, () => {
-        vscode.window.showErrorMessage(`Extension '${extName}' has not been installed :(`);
-        return;
-      });
-    } else if (choice == buttons[1]) {
-      vscode.window.showErrorMessage(`Extension '${extName}' has not been installed.\n Debugging is unreached :(`);
-      return;
-    }
-  }
-
-
-
-
-  //    const definition: tasks.EasyTaskDefinition = {
-  //     type: tasks.TASK_TYPE,
-  //     command: "", // run, test, etc...
-  //     args: [],
-  //     cwd: vscode.workspace.getWorkspaceFolder ,
-  //     env: prepareEnv(runnable, config.runnableEnv),
-  //     overrideCargo: runnable.args.overrideCargo,
-  // };
-
-  //    const target = vscode.workspace.workspaceFolders![0]; // safe, see main activate()
-  //     const cargoTask = await tasks.buildCargoTask(
-  //         target,
-  //         definition,
-  //         runnable.label,
-  //         args,
-  //         config.cargoRunner,
-  //         true
-  //     );
-
-  //     cargoTask.presentationOptions.clear = true;
-  //     // Sadly, this doesn't prevent focus stealing if the terminal is currently
-  //     // hidden, and will become revealed due to task exucution.
-  //     cargoTask.presentationOptions.focus = false;
-
-
-  const path = await toolchain.getPathForExecutable("st-util");
-
-  if (!path) {
-    vscode.window.showErrorMessage("Can't find path to 'st-util'");
-    return;
-  }
-
-  let workspace = vscode.workspace.workspaceFolders![0];
-
-  //const exec = cp.spawn(path, [], {});
-
-  const exec = new Promise((resolve, reject) => {
-    const cargo = cp.spawn(path, [], {
-      stdio: ["ignore", "pipe", "pipe"],
-      //       cwd: workspace.name
-    });
-
-    cargo.on("error", (err) => {
-      reject(new Error(`could not launch cargo: ${err}`))
-    });
-
-    cargo.stderr.on("data", (chunk) => {
-      console.log(chunk.toString());
-    });
-
-    const rl = readline.createInterface({ input: cargo.stdout });
-    rl.on("line", (line) => {
-      console.log(line);
-      //const message = JSON.parse(line);
-      //onStdoutJson(message);
-    });
-
-    cargo.on("exit", (exitCode, _) => {
-      if (exitCode === 0) {
-        resolve(exitCode);
-      }
-      else {
-        reject(new Error(`exit code: ${exitCode}.`));
-      }
-    });
-  });
-
-  await new Promise(f => setTimeout(f, 1000));
-
-
-  // const exec =  execute(path, {}).then(() => {
-  //   vscode.window.showInformationMessage("Success");
-  // }, () => {
-  //   vscode.window.showErrorMessage("Error");
-  // }); //cp.exec(path);
-
-
-  debugEngine = vscode.extensions.getExtension(extName);
-
-  let debugConfig: vscode.DebugConfiguration = {
-    type: "cortex-debug",
-    request: "attach",
-    name: "Debug on PLC",
-    cwd: "${workspaceFolder}",
-    svdFile: "./bin/target.svd",
-    executable: "./bin/target.o",
-    runToEntryPoint: "__entryPoint__",
-    servertype: "external",
-    armToolchainPath: "C:\\Program Files (x86)\\GNU Arm Embedded Toolchain\\10 2020-q4-major\\bin",
-    gdbPath: "C:/Users/YouTooLife_PC/.eec/out/build/bin/arm-none-eabi-gdb.exe",
-    gdbTarget: "localhost:4242",
-    showDevDebugOutput: "raw"
-    //preLaunchTask: "st-util"
-  };
-
-
-  vscode.debug.startDebugging(undefined, debugConfig);
-
-}
+import { EEPLColorProvider } from './lsp/color_provider';
 
 
 let EEPL_stackOfCommands: string[] = []
-
-
 
 let EEPL_isFlashFailed = true;
 let EEPL_isBuildFailed = true;
 let EEPL_isReqRebuild = true;
 
 
-
-
-class EEmbGdbBridgeTaskTerminal2 implements vscode.Pseudoterminal {
-
-  private defaultLine = "→ ";
-  private keys = {
-    enter: "\r",
-    backspace: "\x7f",
-  };
-
-  private actions = {
-    cursorBack: "\x1b[D",
-    deleteChar: "\x1b[P",
-    clear: "\x1b[2J\x1b[3J\x1b[;H",
-  };
-
-  private writeEmitter = new vscode.EventEmitter<string>();
-  onDidWrite: vscode.Event<string> = this.writeEmitter.event;
-  private closeEmitter = new vscode.EventEmitter<number>();
-  onDidClose?: vscode.Event<number> = this.closeEmitter.event;
-
-  //private fileWatcher: vscode.FileSystemWatcher | undefined;
-
-  // constructor(private workspaceRoot: string, private flavor: string, private flags: string[], private getSharedState: () => string | undefined, private setSharedState: (state: string) => void) {
-  // }
-
-  // open(initialDimensions: vscode.TerminalDimensions | undefined): void {
-  // 	// At this point we can start using the terminal.
-  // 	if (this.flags.indexOf('watch') > -1) {
-  // 		const pattern = nodePath.join(this.workspaceRoot, 'customBuildFile');
-  // 		this.fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
-  // 		this.fileWatcher.onDidChange(() => this.doBuild());
-  // 		this.fileWatcher.onDidCreate(() => this.doBuild());
-  // 		this.fileWatcher.onDidDelete(() => this.doBuild());
-  // 	}
-  // 	//this.doBuild();
-  // }
-
-  constructor(private workspaceRoot: string) {
-  }
-
-  onDidOverrideDimensions?: vscode.Event<vscode.TerminalDimensions | undefined> | undefined;
-  onDidChangeName?: vscode.Event<string> | undefined;
-
-  open(initialDimensions: vscode.TerminalDimensions | undefined): void {
-    throw new Error('Method not implemented.');
-  }
-  handleInput?(data: string): void {
-    console.log(data);
-    //throw new Error('Method not implemented.');
-  }
-  setDimensions?(dimensions: vscode.TerminalDimensions): void {
-    //throw new Error('Method not implemented.');
-  }
-
-  close(): void {
-    // The terminal has been closed. Shutdown the build.
-    // if (this.fileWatcher) {
-    // 	this.fileWatcher.dispose();
-    // }
-  }
-
-  log(data: string): void {
-    this.writeEmitter.fire(`${data}\r\n`);
-  }
-
-  clear(): void {
-    this.writeEmitter.fire(this.actions.clear);
-  }
-
-}
-
-let client: LanguageClient;
-const outputChannel = vscode.window.createOutputChannel("EEPL LSP");
-const traceOutputChannel = vscode.window.createOutputChannel("EEPL LSP Trace");
-
-import internal = require('stream');
-import { stdin, stdout } from 'process';
-import { resolve } from 'path';
-import { rejects } from 'assert';
-
-async function executeLsp(): Promise<boolean> {
-
-
-  const path = await toolchain.getPathForExecutable("eec");
-
-
-  if (!path) {
-    vscode.window.showErrorMessage("Can't find path to 'eec'");
-    return false;
-  }
-
-
-  // const portId = this.config.get<string>('eflash.port');
-
-  // let eflashArgs: string[] = [ "-lsp" ]
-  let eGdbTerminal = new EEmbGdbBridgeTaskTerminal2("");
-
-  let eflash: cp.ChildProcessByStdio<internal.Writable, internal.Readable, internal.Readable> | undefined = undefined;
-
-  const promiseExec = new Promise((resolve, reject) => {
-
-    const terminal = vscode.window.createTerminal({ name: 'EEPL TERM', pty: eGdbTerminal });
-
-    eflash = cp.spawn(path, ["./", "-lsp", "-o", "./"], {
-      stdio: ["pipe", "pipe", "pipe"]
-    }).on("error", (err) => {
-      console.log("Error: ", err);
-      reject(new Error(`could not launch eflash: ${err}`));
-      //return false;
-    }).on("exit", (exitCode, _) => {
-      if (exitCode == 0) {
-        resolve("Done");
-      }
-      else {
-        //reject(exitCode);
-        reject(new Error(`exit code: ${exitCode}.`));
-      }
-    });
-
-    eflash.stderr.on("data", (chunk) => {
-      console.log(chunk.toString());
-      eGdbTerminal.log(`stderr: ${chunk.toString()}`);
-    });
-
-    eflash.stdout.on("data", (chunk) => {
-      console.log(chunk.toString());
-      eGdbTerminal.log(`stdout: ${chunk.toString()}`);
-    });
-
-    const rl = readline.createInterface({ input: eflash.stdout });
-    rl.on("line", (line) => {
-
-      console.log(line);
-      eGdbTerminal.log(`line stdout: ${line}`);
-
-    });
-
-
-    const serverOptions = () => {
-      const result: StreamInfo = {
-        writer: eflash!.stdin,
-        reader: eflash!.stdout
-      };
-      return Promise.resolve(result);
-    };
-
-    let clientOptions: LanguageClientOptions = {
-      // Register the server for plain text documents
-      documentSelector: [{ scheme: 'file', language: 'eepl' }],
-      synchronize: {
-        fileEvents: vscode.workspace.createFileSystemWatcher('**/.clientrc')
-      },
-      outputChannel: outputChannel,
-      // revealOutputChannelOn: RevealOutputChannelOn.Never,
-      traceOutputChannel: traceOutputChannel
-      // synchronize: {
-      //   // Notify the server about file changes to '.clientrc files contained in the workspace
-      //   fileEvents: vscode.workspace.createFileSystemWatcher('**/.clientrc')
-      // }
-    };
-
-    // Create the language client and start the client.
-    client = new LanguageClient(
-      'eepl-vscode-lsclient',
-      'EEPL LS Client',
-      serverOptions,
-      clientOptions
-    );
-
-    client.start();
-
-  });
-
-
-  eGdbTerminal.log(`Test`);
-
-  promiseExec.then(() => {
-    result = true;
-  }, () => {
-    result = false;
-  }).catch(() => {
-    result = false;
-  });
-
-  let result: boolean | undefined = undefined;
-
-  const prog = await vscode.window.withProgress({
-    location: vscode.ProgressLocation.Notification,
-    title: "waiting",
-    cancellable: true
-  }, async (progress, token) => {
-
-    progress.report({ message: "Waiting...", increment: -1 });
-
-    token.onCancellationRequested(() => {
-      result = false;
-      if (eflash && eflash.exitCode == null) {
-        eflash.kill();
-      }
-    });
-
-    while (result == undefined) {
-
-      if (token.isCancellationRequested) {
-        result = false;
-        if (eflash && eflash.exitCode == null) {
-          eflash.kill();
-        }
-      }
-      await new Promise(f => setTimeout(f, 100));
-    }
-
-    return;
-
-  });
-
-  return result!;
-
-}
-
-
-class EEPLColorProvider implements vscode.DocumentColorProvider {
-  provideColorPresentations(color: vscode.Color,
-    context: { readonly document: vscode.TextDocument; readonly range: vscode.Range; },
-    token: vscode.CancellationToken): vscode.ProviderResult<vscode.ColorPresentation[]> {
-
-    const clR = 255 * color.red;
-    const clG = 255 * color.green;
-    const clB = 255 * color.blue;
-
-    const result: vscode.ColorPresentation[] = [
-
-      {
-        label: `GET_COLOR(${clR}, ${clG}, ${clB})`
-      }
-
-    ];
-
-
-
-    return result;
-  }
-
-
-  public provideDocumentColors(
-    document: vscode.TextDocument, token: vscode.CancellationToken):
-    Thenable<vscode.ColorInformation[]> {
-
-
-    return new Promise<vscode.ColorInformation[]>((resolve, reject) => {
-
-      let result: vscode.ColorInformation[] = [];
-
-      for (let i = 0; i < document.lineCount; ++i) {
-
-        const line = document.lineAt(i);
-        let range = line.range;
-        let text = line.text;
-
-        let isMatching = true;
-        while (isMatching) {
-
-          const regex: RegExp = /(GET_COLOR)\s*\(\s*((?:0x)?[0-9,a-f,A-F]+)\s*,\s*((?:0x)?[0-9,a-f,A-F]+)\s*,\s*((?:0x)?[0-9,a-f,A-F]+)\s*\)/;
-          // const word = document.getWordRangeAtPosition(line.range.start, regex);
-          const words = regex.exec(text);
-          if (words === null) {
-            isMatching = false;
-            continue;
-          }
-
-          const clR = 1.0 / 255 * Number.parseInt(words[2]);
-          const clG = 1.0 / 255 * Number.parseInt(words[3]);
-          const clB = 1.0 / 255 * Number.parseInt(words[4]);
-
-          const endIndex = text.indexOf(")", words.index) + 1;
-
-          range = range.with(
-            range.start.translate(0, words.index),
-            range.end.with(undefined, range.start.character + endIndex)
-          );
-
-          result.push({ range: range, color: { red: clR, green: clG, blue: clB, alpha: 1.0 } });
-
-          range = range.with(
-            range.end,
-            range.end
-          );
-
-          text = text.substring(endIndex);
-
-        }
-
-
-      }
-
-      return resolve(result);
-    });
-  }
-
-}
-
-
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
 
   let extation = vscode.extensions.getExtension("Retrograd-Studios.moderon-logic");
 
@@ -548,125 +56,6 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showErrorMessage(`This extension not support current host machine (${config.hostTriplet})!`, ...['OK']);
     return;
   }
-
-  let eflashClient = new EFlasherClient(config, context);
-  let eGdbServer = new EGDBServer(config, context, eflashClient);
-
-
-  // let serverModule = context.asAbsolutePath(vscode.Uri.joinPath(vscode.Uri.file('server'), 'server', 'out', 'server.js').fsPath);
-  // The debug options for the server
-  // --inspect=6009: runs the server in Node's Inspector mode so VS Code can attach to the server for debugging
-  // let debugOptions = { execArgv: ['--nolazy', '--inspect=6009'] };
-
-  const serverPort: string = config.get("lsp.port"); // Получаем порт из настроек окружения vscode
-  // vscode.window.showInformationMessage(`Starting LSP client on port: ` + serverPort);  // Отправим пользователю информацию о запуске расширения
-
-
-  // executeLsp();
-
-  const connectionInfo = {
-    port: Number(serverPort),
-    host: "localhost"
-  };
-  const serverOptions = () => {
-    // Подключение по сокету
-    const socket = net.connect(connectionInfo);
-    socket.addListener("error", (err) => {
-      console.log(err.message);
-    })
-    socket.addListener("timeout", () => {
-      console.log("timout");
-    })
-    socket.addListener("connect", () => {
-      console.log("conecteed");
-    })
-    const result: StreamInfo = {
-      writer: socket,
-      reader: socket
-    };
-    return Promise.resolve(result);
-  };
-
-  // outputChannel.show(true);
-  // traceOutputChannel.show(true);
-
-
-
-
-  // const run: Executable = {
-  //   command: serverPath,
-  //   transport: TransportKind.stdio,
-  //   args: [ "-lsp" ],
-  //   options: {
-  //     env: {
-  //       ...process.env,
-  //     },
-  //   },
-  // };
-
-  // // // If the extension is launched in debug mode then the debug server options are used
-  // // // Otherwise the run options are used
-  // let serverOptions: ServerOptions = {
-  //   // run: { command: serverModule, transport: TransportKind.stdio  },
-  //   // // debug: run
-  //   // debug: {
-  //   //   module: serverModule,
-  //   //   transport: TransportKind.stdio,
-  //   //   // options: debugOptions
-  //   // }
-  //   run,
-  //   debug: run
-  // };
-
-  // // Options to control the language client
-  let clientOptions: LanguageClientOptions = {
-    // Register the server for plain text documents
-    documentSelector: [{ scheme: 'file', language: 'eepl' }],
-    synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher('**/.clientrc')
-    },
-    outputChannel: outputChannel,
-    // revealOutputChannelOn: RevealOutputChannelOn.Never,
-    traceOutputChannel: traceOutputChannel
-    // synchronize: {
-    //   // Notify the server about file changes to '.clientrc files contained in the workspace
-    //   fileEvents: vscode.workspace.createFileSystemWatcher('**/.clientrc')
-    // }
-  };
-
-  // // Create the language client and start the client.
-  client = new LanguageClient(
-    'eepl-vscode-lsclient',
-    'EEPL LS Client',
-    serverOptions,
-    clientOptions
-  );
-
-  // // const disposeDidChange = client.onDidChangeState(
-  // //   (stateChangeEvent) => {
-  // //     if (stateChangeEvent.newState === State.Stopped) {
-  // //       vscode.window.showErrorMessage(
-  // //         "Failed to initialize the extension"
-  // //       );
-  // //     } else if (stateChangeEvent.newState === State.Running) {
-  // //       vscode.window.showInformationMessage(
-  // //         "Extension initialized successfully!"
-  // //       );
-  // //     }
-  // //   }
-  // // );
-
-  // let disposable = client.start();
-  // context.subscriptions.push(disposable);
-
-  //   this.languageClient.onReady().then(() => {
-  //     disposeDidChange.dispose();
-  //     this.context!.subscriptions.push(disposable);
-  //   });
-  // } catch (exception) {
-  //   return Promise.reject("Extension error!");
-  // }
-
 
   let sbSelectTargetDev: vscode.StatusBarItem;
   sbSelectTargetDev = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
@@ -719,15 +108,25 @@ export function activate(context: vscode.ExtensionContext) {
   sbDropDebugger.tooltip = "Drop Debugger and GDB Server";
   sbDropDebugger.hide();
 
-
-  (async () => {
+  context.subscriptions.push(vscode.commands.registerCommand('eepl.command.installToolchain', async () => {
     toolchain.checkAndSetCurrentToolchain(config, sbSelectToolchain);
-  })();
+  }));
+
+  await toolchain.IsToolchainInstalled(config);
 
   (async () => {
-    checkPackages(config);
+    if( await toolchain.checkAndSetCurrentToolchain(config, sbSelectToolchain)) {
+      await config.toolchainInstallerResult;
+      checkPackages(config);
+    }
   })();
 
+  let eflashClient = new EFlasherClient(config, context);
+  let eGdbServer = new EGDBServer(config, context, eflashClient);
+
+  context.subscriptions.push(
+    vscode.languages.registerColorProvider(
+      { scheme: 'file', language: 'eepl' }, new EEPLColorProvider()));
 
   context.subscriptions.push(vscode.commands.registerCommand('eepl.command.progress', async config => {
 
@@ -784,12 +183,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   );
 
-
   vscode.debug.onDidStartDebugSession((e) => {
     console.log(e);
     //checkDepencies();
   });
-
 
   vscode.tasks.onDidEndTaskProcess(async (e) => {
 
@@ -889,9 +286,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(activateTaskProvider(config));
 
-
   context.subscriptions.push(vscode.commands.registerCommand('eepl.command.compileProject', async () => {
-
 
     EEPL_isBuildFailed = true;
 
@@ -967,10 +362,6 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-
-    //cPreset.indexOf('Debug') != -1) {}
-
-
     let runRebuild = false;
     for (const file of vscode.workspace.textDocuments) {
       if (file.isDirty) {
@@ -1031,14 +422,11 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
 
-
-
     if (EEPL_isReqRebuild || EEPL_isBuildFailed || runRebuild) {
       EEPL_stackOfCommands.push('eepl.command.buildAndFlash');
       vscode.commands.executeCommand('eepl.command.compileProject');
       return;
     }
-
 
     if (config.targetDevice.periphInfo.isDesktop) {
 
@@ -1106,9 +494,6 @@ export function activate(context: vscode.ExtensionContext) {
       { label: "Settings", detail: "Open build settings", picked: false, description: " $(settings)" }
     ];
 
-
-
-
     const curentPreset = config.get<string>('build.presets');
 
     for (const variant of pickTargets) {
@@ -1136,11 +521,6 @@ export function activate(context: vscode.ExtensionContext) {
 
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand('eepl.command.installToolchain', async () => {
-    toolchain.checkAndSetCurrentToolchain(config, sbSelectToolchain);
-  }));
-
-
   vscode.debug.onDidStartDebugSession((e) => {
     sbDropDebugger.show();
   });
@@ -1158,7 +538,6 @@ export function activate(context: vscode.ExtensionContext) {
         toolchain.checkAndSetCurrentTarget(config, sbSelectTargetDev);
       }
     }
-
 
     if (e.affectsConfiguration('eepl.toolchain.version')) {
       EEPL_isReqRebuild = true;
@@ -1193,7 +572,6 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   vscode.commands.registerCommand('eepl.command.setTargetDevice', async () => {
-
 
     let pickTargets: any[] = [];
 
@@ -1232,11 +610,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     const target = await vscode.window.showQuickPick(
       pickTargets,
-      // [
-      //   { label: 'M72001', description: 'M72001 basic', devName: 'M72IS20C01D', target: vscode.ConfigurationTarget.Workspace },
-      //   { label: 'M72002', description: 'M72002 medium', devName: 'M72IS20C02D', target: vscode.ConfigurationTarget.Workspace },
-      //   { label: 'M72003', description: 'M72003 perfomance', devName: 'M72IS20C03D', target: vscode.ConfigurationTarget.Workspace }
-      // ],
       { placeHolder: 'Select the target Device/Platform', title: "Target Device/Platform" }
     );
 
@@ -1247,7 +620,6 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   vscode.commands.registerCommand('eepl.command.setToolchain', async () => {
-
 
     let pickTargets: any[] = [];
 
@@ -1310,11 +682,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     const target = await vscode.window.showQuickPick(
       pickTargets,
-      // [
-      //   { label: 'M72001', description: 'M72001 basic', devName: 'M72IS20C01D', target: vscode.ConfigurationTarget.Workspace },
-      //   { label: 'M72002', description: 'M72002 medium', devName: 'M72IS20C02D', target: vscode.ConfigurationTarget.Workspace },
-      //   { label: 'M72003', description: 'M72003 perfomance', devName: 'M72IS20C03D', target: vscode.ConfigurationTarget.Workspace }
-      // ],
       { placeHolder: 'Select toolchain version', title: "Toolchain" }
     );
 
@@ -1339,10 +706,6 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 
-
 export function deactivate(): Thenable<void> | undefined {
-  if (!client) {
-    return undefined;
-  }
-  return client.stop();
+  return
 }
